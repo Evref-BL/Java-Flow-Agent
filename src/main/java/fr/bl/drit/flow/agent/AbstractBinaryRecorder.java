@@ -34,7 +34,9 @@ public abstract class AbstractBinaryRecorder implements Recorder {
     this.nameIds = nameIds;
 
     File parent = output.getParentFile();
-    parent.mkdirs();
+    if (parent != null && !parent.exists()) {
+      parent.mkdirs();
+    }
     out = new BufferedOutputStream(new FileOutputStream(output, false), 32 * 1024);
 
     writeHeader();

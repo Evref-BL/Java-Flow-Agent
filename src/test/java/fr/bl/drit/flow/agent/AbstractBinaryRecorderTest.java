@@ -22,8 +22,8 @@ public class AbstractBinaryRecorderTest {
     }
 
     @Override
-    public long enter(String methodSignature) {
-      return -1;
+    public void enter(String methodSignature) {
+      // no-op
     }
 
     @Override

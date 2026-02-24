@@ -32,7 +32,7 @@ public final class JSONLRecorder implements Recorder {
   }
 
   @Override
-  public long enter(String methodSignature) throws IOException {
+  public void enter(String methodSignature) throws IOException {
     long id = nextId.getAndIncrement();
     long tid = Thread.currentThread().getId();
     StringBuilder sb = new StringBuilder(128);
@@ -46,7 +46,6 @@ public final class JSONLRecorder implements Recorder {
     synchronized (writeLock) {
       out.write(sb.toString());
     }
-    return id;
   }
 
   @Override

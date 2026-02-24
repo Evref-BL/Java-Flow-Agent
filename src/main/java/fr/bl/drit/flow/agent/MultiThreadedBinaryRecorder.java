@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * the invocation ID:
  *
  * <pre>
- *   [ENTER:0x01][ID:packed_varint][NAME_ID:varint][TID:varint]
+ *   [ENTER:0x01][NAME_ID:packed_varint][TID:varint]
  *   [EXIT:0x02][COUNT:packed_varint][TID:varint]
  *   [ENTER_NAMED:0x03][ID:packed_varint][LENGTH:varint][NAME:utf8][TID:varint]
  * </pre>
@@ -24,8 +24,8 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public final class MultiThreadedBinaryRecorder extends AbstractBinaryRecorder {
 
-  /** Monotonic invocation id generator. */
-  protected final AtomicLong nextInvocationId = new AtomicLong(1L);
+  /** Monotonic name id generator. */
+  protected final AtomicLong nextNameId = new AtomicLong(1L);
 
   protected final Object writeLock = new Object();
   protected final Object poolLock = new Object();
@@ -44,8 +44,7 @@ public final class MultiThreadedBinaryRecorder extends AbstractBinaryRecorder {
   }
 
   @Override
-  public long enter(String methodSignature) throws IOException {
-    long invocationId = nextInvocationId.getAndIncrement();
+  public void enter(String methodSignature) throws IOException {
     long tid = Thread.currentThread().getId();
 
     // stats
@@ -58,16 +57,16 @@ public final class MultiThreadedBinaryRecorder extends AbstractBinaryRecorder {
         existingNameId = nameIds.get(methodSignature);
         if (existingNameId == null) {
           // first time we see this name: this invocationId becomes the NAME_ID
+          long invocationId = nextNameId.getAndIncrement();
           nameIds.put(methodSignature, invocationId);
           writeEnterNamed(invocationId, methodSignature, tid);
-          return invocationId;
+          return;
         }
       }
     }
 
     // already known name: write ENTER referencing NAME_ID
-    writeEnter(invocationId, existingNameId.longValue(), tid);
-    return invocationId;
+    writeEnter(existingNameId.longValue(), tid);
   }
 
   @Override
@@ -107,11 +106,10 @@ public final class MultiThreadedBinaryRecorder extends AbstractBinaryRecorder {
     }
   }
 
-  protected void writeEnter(long invocationId, long nameId, long tid) throws IOException {
+  protected void writeEnter(long nameId, long tid) throws IOException {
     synchronized (writeLock) {
       flushPendingExits();
-      writeFlagAndVarInt(F_ENTER, invocationId);
-      writeVarInt(nameId);
+      writeFlagAndVarInt(F_ENTER, nameId);
       writeVarInt(tid);
     }
   }

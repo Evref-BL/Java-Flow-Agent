@@ -9,7 +9,7 @@ import java.util.HashMap;
  * Compact flow binary recorder for single-threaded applications.
  *
  * <pre>
- *   [ENTER:0x01][ID:packed_varint][NAME_ID:varint]
+ *   [ENTER:0x01][NAME_ID:packed_varint]
  *   [EXIT:0x02][COUNT:packed_varint]
  *   [ENTER_NAMED:0x03][ID:packed_varint][LENGTH:varint][NAME:utf8]
  * </pre>
@@ -18,31 +18,29 @@ import java.util.HashMap;
  */
 public class SingleThreadedBinaryRecorder extends AbstractBinaryRecorder {
 
-  /** Monotonic invocation id generator. */
-  protected long nextInvocationId = 1L;
+  /** Monotonic name id generator. */
+  protected long nextNameId = 1L;
 
   protected SingleThreadedBinaryRecorder(File output) throws IOException {
     super(output, new HashMap<>());
   }
 
   @Override
-  public long enter(String methodSignature) throws IOException {
-    long invocationId = nextInvocationId++;
-
+  public void enter(String methodSignature) throws IOException {
     // stats
     invocations++;
 
     Long existingNameId = nameIds.get(methodSignature);
     if (existingNameId == null) {
       // first time we see this name: this invocationId becomes the NAME_ID
+      long invocationId = nextNameId++;
       nameIds.put(methodSignature, invocationId);
       writeEnterNamed(invocationId, methodSignature);
-      return invocationId;
+      return;
     }
 
     // name already known: write ENTER referencing NAME_ID
-    writeEnter(invocationId, existingNameId);
-    return invocationId;
+    writeEnter(existingNameId);
   }
 
   @Override
@@ -62,10 +60,9 @@ public class SingleThreadedBinaryRecorder extends AbstractBinaryRecorder {
     out.write(utf8);
   }
 
-  protected void writeEnter(long invocationId, long nameId) throws IOException {
+  protected void writeEnter(long nameId) throws IOException {
     flushPendingExits();
-    writeFlagAndVarInt(F_ENTER, invocationId);
-    writeVarInt(nameId);
+    writeFlagAndVarInt(F_ENTER, nameId);
   }
 
   protected void flushPendingExits() throws IOException {

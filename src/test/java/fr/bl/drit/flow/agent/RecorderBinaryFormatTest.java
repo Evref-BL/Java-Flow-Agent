@@ -67,6 +67,8 @@ public class RecorderBinaryFormatTest {
       rec.exit();
       rec.enter("com.example.Foo#bar()"); // same name -> should reference existing nameId
       rec.exit();
+    } catch (IOException e) {
+      fail(e);
     }
 
     try (InputStream in = new BufferedInputStream(new FileInputStream(tmp))) {
@@ -93,9 +95,8 @@ public class RecorderBinaryFormatTest {
       // Next should be second ENTER, which should be an ENTER referencing the nameId.
       Object[] p2 = readFlagAndVarInt(in);
       byte flag2 = (byte) p2[0];
+      long nameIdRef = (long) p2[1];
       assertEquals(F_ENTER, flag2, "second enter should be a simple ENTER referencing name id");
-      // after packed id, read nameId varint:
-      long nameIdRef = readVarInt(in);
       // nameIdRef should equal the id from first event (idRead1)
       assertEquals(
           idRead1, nameIdRef, "nameId reference must match the id assigned in ENTER_NAMED");

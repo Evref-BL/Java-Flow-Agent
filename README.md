@@ -1,4 +1,4 @@
-# Dataflow Agent
+# Flow Agent
 
 A Java agent that records a dynamic call graph of the chosen methods.
 
