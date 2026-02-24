@@ -1,0 +1,14 @@
+# Gradle project-specific cache directory
+.gradle
+
+# Gradle build output directory
+build
+
+# Kotlin plugin data
+.kotlin
+
+# VSCode directory
+.vscode
+
+# bin directory created when compiling without using Gradle
+bin
