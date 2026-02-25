@@ -6,10 +6,13 @@ import static net.bytebuddy.matcher.ElementMatchers.isMethod;
 import static net.bytebuddy.matcher.ElementMatchers.nameStartsWith;
 import static net.bytebuddy.matcher.ElementMatchers.not;
 
-import fr.bl.drit.flow.agent.FlowAdvice.MethodId;
 import java.io.File;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.lang.instrument.Instrumentation;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import net.bytebuddy.agent.builder.AgentBuilder;
@@ -21,11 +24,9 @@ import net.bytebuddy.matcher.ElementMatcher;
 /**
  * Java agent entrypoint.
  *
- * <p>agentArgs are comma-separated key=value pairs (keys: target, out) e.g.
- * target=com.myapp.,out=/tmp/cg.json
- *
- * <p>'target' is required (the binary-name target used with nameStartsWith()). 'out' is optional;
- * defaults to "flow" in the working directory.
+ * <p>agentArgs are comma-separated key=value pairs, e.g. target=com.myapp.,out=/tmp/flow/
+ * <li>{@code target} is required.
+ * <li>{@code out} is required.
  */
 public class AgentMain {
 
@@ -45,30 +46,49 @@ public class AgentMain {
     // RendererBench.run(sample, /*warmup*/ 20_000, /*measure*/ 200_000);
     // // then continue with agent installation
 
+    // === parse arguments ===
+
     final Map<String, String> args = parseAgentArgs(agentArgs);
     final String target = args.get("target");
-    final String outPath = args.getOrDefault("out", "flow");
+    final String outputPath = args.get("out");
     final String format = args.getOrDefault("format", "binary");
-    final String methodIdsPath = args.get("methodIds");
+    final String optimizePath = args.get("optimize");
+    String registryPath = args.get("registry");
 
-    // target classes
     if (target.isEmpty()) {
       System.err.println(
-          "[flow-agent] No 'target' provided in agentArgs; instrumenter will be disabled.");
-      System.err.println("[flow-agent] Provide agentArgs like: target=com.myapp.,out=/tmp/flow");
+          "[flow-agent] No 'target' provided in agent arguments; instrumenter will be disabled.");
+      printUsage(System.err);
       return;
     }
 
+    if (outputPath == null) {
+      System.err.println(
+          "[flow-agent] No 'out' provided in agent arguments; instrumenter will be disabled.");
+      printUsage(System.err);
+      return;
+    }
+
+    // === process arguments ===
+
+    // target classes
     ElementMatcher<TypeDescription> typeMatcher = typeMatcher(target);
     if (typeMatcher == null) {
       System.err.println("[flow-agent] No valid prefixes found in 'target' argument.");
       return;
     }
+    System.out.println("[flow-agent] Instrumenting classes starting with: " + target);
 
     // output directory
-    final File outputDir = new File(outPath);
-    System.out.println("[flow-agent] Instrumenting classes starting with: " + target);
-    System.out.println("[flow-agent] Callgraph will be written to: " + outputDir.getAbsolutePath());
+    final Path outputDir = Paths.get(outputPath).toAbsolutePath().normalize();
+    try {
+      Files.createDirectories(outputDir);
+    } catch (IOException e) {
+      System.err.println("[flow-agent] Failed to create output directory: " + outputDir);
+      e.printStackTrace();
+      return;
+    }
+    System.out.println("[flow-agent] Flow will be written to: " + outputDir);
 
     // call tree format
     final ThreadRecorderFactory factory =
@@ -79,21 +99,32 @@ public class AgentMain {
         };
     System.out.println("[flow-agent] Using call tree format: " + format);
 
-    // method ID registry
-    final MethodIdRegistry methodRegistry;
-    if (methodIdsPath != null) {
+    // optimize method ID registry, set or overwrite 'registryPath' argument
+    if (optimizePath != null) {
       try {
-        methodRegistry = new MethodIdRegistry(new File(methodIdsPath));
+        Path optimizedRegistry =
+            MethodIdRemapper.optimizeFromFlowDirectory(Paths.get(optimizePath), outputDir);
+        registryPath = optimizedRegistry.toAbsolutePath().normalize().toString();
+        System.out.println("[flow-agent] Optimized method registry: " + registryPath);
+      } catch (IOException e) {
+        System.err.println("[flow-agent] Failed to optimize method registry: " + e);
+      }
+    }
+
+    // method ID registry
+    final MethodIdRegistry idRegistry;
+    if (registryPath != null) {
+      try {
+        idRegistry = new MethodIdRegistry(new File(registryPath));
         System.out.println(
-            "[flow-agent] Loaded " + methodRegistry.size() + " method IDs from " + methodIdsPath);
+            "[flow-agent] Loaded " + idRegistry.size() + " method IDs from " + registryPath);
       } catch (IOException e) {
         System.err.println(
-            "[flow-agent] Failed to load method IDs from " + methodIdsPath + ": " + e);
-        e.printStackTrace();
+            "[flow-agent] Failed to load method IDs from " + registryPath + ": " + e);
         return;
       }
     } else {
-      methodRegistry = new MethodIdRegistry();
+      idRegistry = new MethodIdRegistry();
     }
 
     // === recorder setup ===
@@ -101,9 +132,11 @@ public class AgentMain {
     try {
       Singletons.RECORDER = new ThreadLocalRecorder(factory, outputDir);
     } catch (IOException e) {
-      System.err.println("[flow-agent] failed to create writer: " + e);
+      System.err.println("[flow-agent] Failed to create writer: " + e);
       e.printStackTrace();
     }
+
+    final String finalRegistryPath = registryPath;
 
     // register shutdown hook to close recorder
     Runtime.getRuntime()
@@ -112,10 +145,14 @@ public class AgentMain {
                 () -> {
                   try {
                     Singletons.RECORDER.close();
-                    System.out.println(
-                        "[flow-agent] flow written to " + outputDir.getAbsolutePath());
+
+                    if (finalRegistryPath == null) {
+                      idRegistry.dump(outputDir.resolve("ids.properties"));
+                    }
+
+                    System.out.println("[flow-agent] Flow written to " + outputDir);
                   } catch (Exception e) {
-                    System.err.println("[flow-agent] failed to write flow: " + e);
+                    System.err.println("[flow-agent] Failed to write flow: " + e);
                     e.printStackTrace();
                   }
                 }));
@@ -124,8 +161,11 @@ public class AgentMain {
 
     Advice advice =
         Advice.withCustomMapping()
-            .bind(MethodId.class, new MethodIdOffsetMapping(methodRegistry))
+            .bind(MethodId.class, new MethodIdOffsetMapping(idRegistry))
             .to(FlowAdvice.class);
+    // Advice.withCustomMapping()
+    //     .bind(new MethodIdOffsetMapping.Factory(idRegistry))
+    //     .to(FlowAdvice.class);
 
     ElementMatcher<MethodDescription> methodMatcher =
         isMethod().and(not(isConstructor())).and(not(isAbstract()));
@@ -141,8 +181,7 @@ public class AgentMain {
                 (builder, typeDescription, classLoader, module, protectionDomain) ->
                     builder.visit(advice.on(methodMatcher)));
 
-    // agentBuilder =
-    // agentBuilder.with(AgentBuilder.Listener.StreamWriting.toSystemOut());
+    // agentBuilder = agentBuilder.with(AgentBuilder.Listener.StreamWriting.toSystemOut());
 
     agentBuilder.installOn(inst);
   }
@@ -211,5 +250,9 @@ public class AgentMain {
       }
     }
     return typeMatcher;
+  }
+
+  private static void printUsage(PrintStream out) {
+    out.println("[flow-agent] Provide agent arguments like: target=com.myapp.,out=/tmp/flow");
   }
 }

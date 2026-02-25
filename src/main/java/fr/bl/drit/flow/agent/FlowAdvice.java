@@ -1,17 +1,9 @@
 package fr.bl.drit.flow.agent;
 
 import java.io.IOException;
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
 import net.bytebuddy.asm.Advice;
 
 public class FlowAdvice {
-
-  @Retention(RetentionPolicy.RUNTIME)
-  @Target(ElementType.PARAMETER)
-  public @interface MethodId {}
 
   /* (non-Javadoc)
   Use `inline = false` to avoid `invokedynamic` instructions which are illegal before Java 8.

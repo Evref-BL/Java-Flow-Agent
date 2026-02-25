@@ -20,13 +20,12 @@ public final class MethodIdOffsetMapping implements Advice.OffsetMapping {
   }
 
   @Override
-  public Target resolve(
+  public Advice.OffsetMapping.Target resolve(
       TypeDescription instrumentedType,
       MethodDescription instrumentedMethod,
       Assigner assigner,
       Advice.ArgumentHandler argumentHandler,
-      Sort sort) {
-
+      Advice.OffsetMapping.Sort sort) {
     String key =
         instrumentedType.getName()
             + "#"
@@ -35,6 +34,6 @@ public final class MethodIdOffsetMapping implements Advice.OffsetMapping {
 
     long id = registry.idFor(key);
 
-    return Target.ForStackManipulation.of(LongConstant.forValue(id));
+    return new Advice.OffsetMapping.Target.ForStackManipulation(LongConstant.forValue(id));
   }
 }

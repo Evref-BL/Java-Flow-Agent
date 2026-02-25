@@ -1,12 +1,13 @@
 package fr.bl.drit.flow.agent;
 
 import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 
 /**
  * Call tree JSONL recorder.
@@ -17,10 +18,16 @@ public final class JsonlThreadRecorder implements Recorder {
 
   private final Writer out;
 
-  public JsonlThreadRecorder(File output) throws IOException {
-    out =
+  public JsonlThreadRecorder(Path output) throws IOException {
+    this.out =
         new BufferedWriter(
-            new OutputStreamWriter(new FileOutputStream(output, false), StandardCharsets.UTF_8),
+            new OutputStreamWriter(
+                Files.newOutputStream(
+                    output,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.WRITE,
+                    StandardOpenOption.TRUNCATE_EXISTING),
+                StandardCharsets.UTF_8),
             64 * 1024);
   }
 

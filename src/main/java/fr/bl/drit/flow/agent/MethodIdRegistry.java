@@ -4,8 +4,11 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -56,13 +59,20 @@ public final class MethodIdRegistry {
 
   /**
    * Dump the registry to a file, for potential reuse in future runs. Format is lines of "key=id".
-   *
-   * @param output
-   * @throws IOException
    */
-  public void dump(File output) throws IOException {
-    try (BufferedWriter w = new BufferedWriter(new FileWriter(output))) {
-      for (Map.Entry<String, Long> entry : keyToId.entrySet()) {
+  public void dump(Path output) throws IOException {
+    dump(keyToId, output);
+  }
+
+  public static void dump(Map<String, Long> mapping, Path output) throws IOException {
+    try (BufferedWriter w =
+        Files.newBufferedWriter(
+            output,
+            StandardCharsets.UTF_8,
+            StandardOpenOption.CREATE,
+            StandardOpenOption.WRITE,
+            StandardOpenOption.TRUNCATE_EXISTING)) {
+      for (Map.Entry<String, Long> entry : mapping.entrySet()) {
         w.write(entry.getKey());
         w.write('=');
         w.write(entry.getValue().toString());

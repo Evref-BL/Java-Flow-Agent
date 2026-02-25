@@ -1,7 +1,7 @@
 package fr.bl.drit.flow.agent;
 
-import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
@@ -10,7 +10,7 @@ public final class ThreadLocalRecorder implements Recorder {
   private final ThreadLocal<Recorder> local;
   private final Queue<Recorder> all = new ConcurrentLinkedQueue<>();
 
-  public ThreadLocalRecorder(ThreadRecorderFactory factory, File output) throws IOException {
+  public ThreadLocalRecorder(ThreadRecorderFactory factory, Path output) throws IOException {
     this.local =
         ThreadLocal.withInitial(
             () -> {
@@ -19,7 +19,7 @@ public final class ThreadLocalRecorder implements Recorder {
               Recorder recorder = null;
               try {
                 recorder =
-                    factory.createForCurrentThread(new File(output, "thread-" + tid + ".flow"));
+                    factory.createForCurrentThread(output.resolve("thread-" + tid + ".flow"));
               } catch (IOException e) {
                 throw new RuntimeException("Failed to create recorder for thread " + thread, e);
               }

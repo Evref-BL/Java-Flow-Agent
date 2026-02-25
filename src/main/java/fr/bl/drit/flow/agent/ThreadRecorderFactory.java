@@ -1,9 +1,9 @@
 package fr.bl.drit.flow.agent;
 
-import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 
 @FunctionalInterface
 public interface ThreadRecorderFactory {
-  Recorder createForCurrentThread(File directory) throws IOException;
+  Recorder createForCurrentThread(Path directory) throws IOException;
 }
