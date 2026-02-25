@@ -1,9 +1,17 @@
 package fr.bl.drit.flow.agent;
 
 import java.io.IOException;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 import net.bytebuddy.asm.Advice;
 
-public class CallAdvice {
+public class FlowAdvice {
+
+  @Retention(RetentionPolicy.RUNTIME)
+  @Target(ElementType.PARAMETER)
+  public @interface MethodId {}
 
   /* (non-Javadoc)
   Use `inline = false` to avoid `invokedynamic` instructions which are illegal before Java 8.
@@ -15,16 +23,11 @@ public class CallAdvice {
   */
 
   @Advice.OnMethodEnter(inline = false)
-  public static void enter(
-      @Advice.Origin("#t") String className,
-      @Advice.Origin("#m") String method,
-      @Advice.Origin("#d") String descriptor) {
-    String signature = className + "#" + method + descriptor.substring(0, descriptor.indexOf(')'));
+  public static void enter(@MethodId long methodId) {
     try {
-      Singletons.RECORDER.enter(signature);
+      Singletons.RECORDER.enter(methodId);
     } catch (IOException e) {
       System.err.println("[flow-agent] ENTER write error: " + e);
-      e.printStackTrace();
     }
   }
 
@@ -34,7 +37,6 @@ public class CallAdvice {
       Singletons.RECORDER.exit();
     } catch (IOException e) {
       System.err.println("[flow-agent] EXIT write error: " + e);
-      e.printStackTrace();
     }
   }
 }

@@ -6,6 +6,7 @@ import static net.bytebuddy.matcher.ElementMatchers.isMethod;
 import static net.bytebuddy.matcher.ElementMatchers.nameStartsWith;
 import static net.bytebuddy.matcher.ElementMatchers.not;
 
+import fr.bl.drit.flow.agent.FlowAdvice.MethodId;
 import java.io.File;
 import java.io.IOException;
 import java.lang.instrument.Instrumentation;
@@ -13,6 +14,7 @@ import java.util.HashMap;
 import java.util.Map;
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
+import net.bytebuddy.description.method.MethodDescription;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
@@ -37,7 +39,8 @@ public class AgentMain {
 
   private static void init(String agentArgs, Instrumentation inst) {
     // // Example: benchmark classes from your app (use classes you control)
-    // Class<?>[] sample = new Class<?>[] {Advice.class, ObjectMapper.class, ObjectWriter.class};
+    // Class<?>[] sample = new Class<?>[] {Advice.class, ObjectMapper.class,
+    // ObjectWriter.class};
     // // run quick benchmarks
     // RendererBench.run(sample, /*warmup*/ 20_000, /*measure*/ 200_000);
     // // then continue with agent installation
@@ -45,7 +48,10 @@ public class AgentMain {
     final Map<String, String> args = parseAgentArgs(agentArgs);
     final String target = args.get("target");
     final String outPath = args.getOrDefault("out", "flow");
+    final String format = args.getOrDefault("format", "binary");
+    final String methodIdsPath = args.get("methodIds");
 
+    // target classes
     if (target.isEmpty()) {
       System.err.println(
           "[flow-agent] No 'target' provided in agentArgs; instrumenter will be disabled.");
@@ -53,37 +59,47 @@ public class AgentMain {
       return;
     }
 
-    ElementMatcher<TypeDescription> typeMatcher = typeMatcher(args.get("target"));
+    ElementMatcher<TypeDescription> typeMatcher = typeMatcher(target);
     if (typeMatcher == null) {
-      System.err.println("[flow-agent] No valid prefixes found in 'target'.");
+      System.err.println("[flow-agent] No valid prefixes found in 'target' argument.");
       return;
     }
 
-    final File output = new File(outPath);
+    // output directory
+    final File outputDir = new File(outPath);
     System.out.println("[flow-agent] Instrumenting classes starting with: " + target);
-    System.out.println("[flow-agent] Callgraph will be written to: " + output.getAbsolutePath());
+    System.out.println("[flow-agent] Callgraph will be written to: " + outputDir.getAbsolutePath());
 
-    AgentBuilder agentBuilder =
-        new AgentBuilder.Default()
-            .ignore(nameStartsWith("net.bytebuddy."))
-            .ignore(nameStartsWith("sun."))
-            .ignore(nameStartsWith("java."))
-            .ignore(nameStartsWith("jdk."))
-            // Only transform application classes whose binary name starts with target
-            .type(typeMatcher)
-            .transform(
-                (builder, typeDescription, classLoader, module, protectionDomain) ->
-                    builder.visit(
-                        Advice.to(CallAdvice.class)
-                            .on(isMethod().and(not(isConstructor())).and(not(isAbstract())))));
+    // call tree format
+    final ThreadRecorderFactory factory =
+        switch (format) {
+          case "binary" -> BinaryThreadRecorder::new;
+          case "jsonl" -> JsonlThreadRecorder::new;
+          default -> throw new IllegalArgumentException("Unsupported format: " + format);
+        };
+    System.out.println("[flow-agent] Using call tree format: " + format);
 
-    // agentBuilder = agentBuilder.with(AgentBuilder.Listener.StreamWriting.toSystemOut());
+    // method ID registry
+    final MethodIdRegistry methodRegistry;
+    if (methodIdsPath != null) {
+      try {
+        methodRegistry = new MethodIdRegistry(new File(methodIdsPath));
+        System.out.println(
+            "[flow-agent] Loaded " + methodRegistry.size() + " method IDs from " + methodIdsPath);
+      } catch (IOException e) {
+        System.err.println(
+            "[flow-agent] Failed to load method IDs from " + methodIdsPath + ": " + e);
+        e.printStackTrace();
+        return;
+      }
+    } else {
+      methodRegistry = new MethodIdRegistry();
+    }
 
-    agentBuilder.installOn(inst);
+    // === recorder setup ===
 
-    // initialize the tree recorder for streaming
     try {
-      Singletons.RECORDER = new SingleThreadedBinaryRecorder(output);
+      Singletons.RECORDER = new ThreadLocalRecorder(factory, outputDir);
     } catch (IOException e) {
       System.err.println("[flow-agent] failed to create writer: " + e);
       e.printStackTrace();
@@ -96,12 +112,39 @@ public class AgentMain {
                 () -> {
                   try {
                     Singletons.RECORDER.close();
-                    System.out.println("[flow-agent] flow written to " + output.getAbsolutePath());
+                    System.out.println(
+                        "[flow-agent] flow written to " + outputDir.getAbsolutePath());
                   } catch (Exception e) {
                     System.err.println("[flow-agent] failed to write flow: " + e);
                     e.printStackTrace();
                   }
                 }));
+
+    // === instrumentation setup ===
+
+    Advice advice =
+        Advice.withCustomMapping()
+            .bind(MethodId.class, new MethodIdOffsetMapping(methodRegistry))
+            .to(FlowAdvice.class);
+
+    ElementMatcher<MethodDescription> methodMatcher =
+        isMethod().and(not(isConstructor())).and(not(isAbstract()));
+
+    AgentBuilder agentBuilder =
+        new AgentBuilder.Default()
+            .ignore(nameStartsWith("net.bytebuddy."))
+            .ignore(nameStartsWith("sun."))
+            .ignore(nameStartsWith("java."))
+            .ignore(nameStartsWith("jdk."))
+            .type(typeMatcher)
+            .transform(
+                (builder, typeDescription, classLoader, module, protectionDomain) ->
+                    builder.visit(advice.on(methodMatcher)));
+
+    // agentBuilder =
+    // agentBuilder.with(AgentBuilder.Listener.StreamWriting.toSystemOut());
+
+    agentBuilder.installOn(inst);
   }
 
   /**
@@ -154,7 +197,8 @@ public class AgentMain {
       return null;
     }
 
-    // split on '+' and build an OR matcher: nameStartsWith(t1).or(nameStartsWith(t2))...
+    // split on '+' and build an OR matcher:
+    // nameStartsWith(t1).or(nameStartsWith(t2))...
     String[] tokens = targetValue.split("\\+");
     ElementMatcher.Junction<TypeDescription> typeMatcher = null;
     for (String tok : tokens) {

@@ -1,6 +1,6 @@
 package fr.bl.drit.flow.agent;
 
-import static fr.bl.drit.flow.agent.AbstractBinaryRecorder.*;
+import static fr.bl.drit.flow.agent.BinaryThreadRecorder.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -8,45 +8,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.HashMap;
 import org.junit.jupiter.api.Test;
 
-/** Tests for AbstractBinaryRecorder's varint encoders. */
-public class AbstractBinaryRecorderTest {
-
-  /** Minimal concrete subclass used for testing protected encoder methods. */
-  private static final class TestRecorder extends AbstractBinaryRecorder {
-
-    TestRecorder(File output) throws IOException {
-      super(output, new HashMap<>());
-    }
-
-    @Override
-    public void enter(String methodSignature) {
-      // no-op
-    }
-
-    @Override
-    public void exit() {
-      // no-op
-    }
-
-    @Override
-    protected void writeHeader() throws IOException {
-      // no-op
-    }
-
-    @Override
-    protected void flushPendingExits() throws IOException {
-      // no-op
-    }
-
-    @Override
-    public void close() throws IOException {
-      out.flush();
-      out.close();
-    }
-  }
+/** Tests for {@link BinaryThreadRecorder}. */
+public class BinaryThreadRecorderTest {
 
   // helper to read file bytes after recorder closed
   private static byte[] contentOf(File f) throws IOException {
@@ -105,7 +70,7 @@ public class AbstractBinaryRecorderTest {
     File tmp = Files.createTempFile("rec-test-varint-", ".bin").toFile();
     tmp.deleteOnExit();
 
-    try (AbstractBinaryRecorder r = new TestRecorder(tmp)) {
+    try (BinaryThreadRecorder r = new BinaryThreadRecorder(tmp)) {
       r.writeVarInt(0L);
       r.writeVarInt(1L);
       r.writeVarInt(127L);
@@ -132,17 +97,16 @@ public class AbstractBinaryRecorderTest {
     File tmp = Files.createTempFile("rec-test-flag-", ".bin").toFile();
     tmp.deleteOnExit();
 
-    try (AbstractBinaryRecorder r = new TestRecorder(tmp)) {
+    try (BinaryThreadRecorder r = new BinaryThreadRecorder(tmp)) {
       // value fits in 5 bits (<=31), no continuation
-      r.writeFlagAndVarInt(F_ENTER, 10L); // 0x40|10 = 0x4A
-      r.writeFlagAndVarInt(F_EXIT, 31L); // 0x80|31 = 0x9F
-      r.writeFlagAndVarInt(F_ENTER_NAMED, 5L); // 0xC0|5 = 0xC5
+      r.writeFlagAndVarInt(F_ENTER, 10L); // 0x80|10 = 0x8A
+      r.writeFlagAndVarInt(F_EXIT, 31L); // 0x00|31 = 0x1F
     } catch (IOException e) {
       fail(e);
     }
 
     byte[] actual = contentOf(tmp);
-    byte[] expected = new byte[] {(byte) 0x4A, (byte) 0x9F, (byte) 0xC5};
+    byte[] expected = new byte[] {(byte) 0x8A, (byte) 0x1F};
     assertBytesEquals(expected, actual);
   }
 
@@ -151,10 +115,10 @@ public class AbstractBinaryRecorderTest {
     File tmp = Files.createTempFile("rec-test-flag-cont-", ".bin").toFile();
     tmp.deleteOnExit();
 
-    try (AbstractBinaryRecorder r = new TestRecorder(tmp)) {
-      // value = 32 -> firstPayload=0, remainder 1 -> [flag+cont+0][0x01]
-      r.writeFlagAndVarInt(F_ENTER, 32L);
-      // value = 300 (0x12C): low5=12, remainder=9 -> [flag+cont+12][0x09]
+    try (BinaryThreadRecorder r = new BinaryThreadRecorder(tmp)) {
+      // value = 64 -> firstPayload=0, remainder=1 -> [flag+cont+0][0x01]
+      r.writeFlagAndVarInt(F_ENTER, 64L);
+      // value = 300 (0x12C): low6=44, remainder=4 -> [flag+cont+44][0x04]
       r.writeFlagAndVarInt(F_EXIT, 300L);
     } catch (IOException e) {
       fail(e);
@@ -162,10 +126,10 @@ public class AbstractBinaryRecorderTest {
 
     byte[] actual = contentOf(tmp);
 
-    byte[] expected1 = new byte[] {(byte) 0x60, (byte) 0x01};
-    int firstPayload = (int) (300L & 0x1F); // 12 = 0x0C
-    byte firstByte = (byte) (F_EXIT | 0x20 | firstPayload);
-    byte secondByte = (byte) ((300L >>> 5) & 0x7F); // 9
+    byte[] expected1 = new byte[] {F_ENTER | 0x40, 0x01};
+    int firstPayload = (int) (300L & 0x3F); // 44 = 0x2C
+    byte firstByte = (byte) (F_EXIT | 0x40 | firstPayload);
+    byte secondByte = (byte) ((300L >>> 6) & 0x7F); // 4 = 0x04
     byte[] expected2 = new byte[] {firstByte, secondByte};
 
     byte[] expected = concat(expected1, expected2);
