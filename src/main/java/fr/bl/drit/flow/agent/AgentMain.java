@@ -39,13 +39,6 @@ public class AgentMain {
   }
 
   private static void init(String agentArgs, Instrumentation inst) {
-    // // Example: benchmark classes from your app (use classes you control)
-    // Class<?>[] sample = new Class<?>[] {Advice.class, ObjectMapper.class,
-    // ObjectWriter.class};
-    // // run quick benchmarks
-    // RendererBench.run(sample, /*warmup*/ 20_000, /*measure*/ 200_000);
-    // // then continue with agent installation
-
     // === parse arguments ===
 
     final Map<String, String> args = parseAgentArgs(agentArgs);
@@ -163,9 +156,6 @@ public class AgentMain {
         Advice.withCustomMapping()
             .bind(MethodId.class, new MethodIdOffsetMapping(idRegistry))
             .to(FlowAdvice.class);
-    // Advice.withCustomMapping()
-    //     .bind(new MethodIdOffsetMapping.Factory(idRegistry))
-    //     .to(FlowAdvice.class);
 
     ElementMatcher<MethodDescription> methodMatcher =
         isMethod().and(not(isConstructor())).and(not(isAbstract()));
