@@ -11,7 +11,11 @@ public final class ThreadLocalRecorder implements Recorder {
   private final ThreadLocal<ThreadRecorder> local;
   private final Queue<ThreadRecorder> all = new ConcurrentLinkedQueue<>();
 
-  public ThreadLocalRecorder(ThreadRecorderFactory factory, Path outputDir) throws IOException {
+  /**
+   * @param factory Responsible for creating {@link ThreadRecorder}s
+   * @param outputDir Path to the output directory
+   */
+  public ThreadLocalRecorder(ThreadRecorderFactory factory, Path outputDir) {
     this.local =
         ThreadLocal.withInitial(
             () -> {

@@ -141,12 +141,13 @@ public final class MethodIdRemapper {
   }
 
   /**
-   * Scan existing traces and mapping. Then, optimize the mapping and write it.
+   * Read existing traces and mapping. Then, optimize the mapping and write it.
    *
    * @param inputDir directory containing trace files
    * @param outputDir directory where optimized mapping will be written
    * @return path to optimized mapping file
-   * @throws IOException
+   * @throws IOException If an I/O error occurs when reading from {@code inputDir} or writing to
+   *     {@code outputDir}.
    */
   public static Path optimize(Path inputDir, Path outputDir) throws IOException {
     Path idsFile = inputDir.resolve("ids.properties");

@@ -3,7 +3,11 @@ package fr.bl.drit.flow.agent;
 import java.io.IOException;
 import net.bytebuddy.asm.Advice;
 
-public class FlowAdvice {
+/**
+ * Contains the enter and exit {@link net.bytebuddy.asm.Advice Advice} methods. Their code is
+ * inserted at the start and end of instrumented methods, respectively.
+ */
+public final class FlowAdvice {
 
   /* (non-Javadoc)
   Use `inline = false` to avoid `invokedynamic` instructions which are illegal before Java 8.
@@ -14,6 +18,11 @@ public class FlowAdvice {
   The exception is then rethrown automatically to let the execution proceed normally.
   */
 
+  /**
+   * Record entering an instrumented method.
+   *
+   * @param methodId The ID of the instrumented method
+   */
   @Advice.OnMethodEnter(inline = false)
   public static void enter(@MethodId long methodId) {
     try {
@@ -23,6 +32,7 @@ public class FlowAdvice {
     }
   }
 
+  /** Record exiting an instrumented method. */
   @Advice.OnMethodExit(inline = false, onThrowable = Throwable.class)
   public static void exit() {
     try {

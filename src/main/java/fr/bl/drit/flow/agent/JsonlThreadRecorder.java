@@ -12,7 +12,12 @@ import java.nio.file.StandardOpenOption;
 /**
  * Call tree JSONL recorder.
  *
- * <p>Each line is either: - {"e":"enter","method":"<id>"} - {"e":"exit"}
+ * <p>Each line is either:
+ *
+ * <ul>
+ *   <li>A method enter event: {@code {"e":"enter","method":"<id>"}}
+ *   <li>A method exit event: {@code {"e":"exit"}}
+ * </ul>
  */
 public final class JsonlThreadRecorder implements ThreadRecorder {
 
@@ -21,6 +26,10 @@ public final class JsonlThreadRecorder implements ThreadRecorder {
 
   private final String fileName;
 
+  /**
+   * @param outputDir Path to output directory
+   * @throws IOException If an I/O error occurs when opening an output stream.
+   */
   public JsonlThreadRecorder(Path outputDir) throws IOException {
     this.fileName = "thread-" + Thread.currentThread().getId() + ".jsonl";
     this.out =
@@ -35,6 +44,9 @@ public final class JsonlThreadRecorder implements ThreadRecorder {
             64 * 1024);
   }
 
+  /**
+   * @return The file name this recorder is writing to
+   */
   public String getFileName() {
     return fileName;
   }

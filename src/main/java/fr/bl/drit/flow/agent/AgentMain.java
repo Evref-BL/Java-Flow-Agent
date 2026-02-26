@@ -63,10 +63,22 @@ import net.bytebuddy.matcher.ElementMatcher;
  */
 public class AgentMain {
 
+  /**
+   * When starting the application with the agent.
+   *
+   * @param agentArgs Arguments to parse
+   * @param inst Allows instrumenting Java code
+   */
   public static void premain(String agentArgs, Instrumentation inst) {
     init(agentArgs, inst);
   }
 
+  /**
+   * When attaching the agent at runtime.
+   *
+   * @param agentArgs Arguments to parse
+   * @param inst Allows instrumenting Java code
+   */
   public static void agentmain(String agentArgs, Instrumentation inst) {
     init(agentArgs, inst);
   }
@@ -153,14 +165,9 @@ public class AgentMain {
 
     // === recorder setup ===
 
-    try {
-      Singletons.RECORDER = new ThreadLocalRecorder(factory, outputDir);
-    } catch (IOException e) {
-      System.err.println("[flow-agent] Failed to create writer: " + e);
-      e.printStackTrace();
-    }
+    Singletons.RECORDER = new ThreadLocalRecorder(factory, outputDir);
 
-    final String finalMappingPath = mappingPath;
+    final boolean hasMappingPath = mappingPath != null;
 
     // register shutdown hook to close recorder
     Runtime.getRuntime()
@@ -170,7 +177,7 @@ public class AgentMain {
                   try {
                     Singletons.RECORDER.close();
 
-                    if (finalMappingPath == null) {
+                    if (!hasMappingPath) {
                       idMapping.dump(outputDir.resolve("ids.properties"));
                     }
 

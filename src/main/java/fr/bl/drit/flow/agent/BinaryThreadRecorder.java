@@ -159,6 +159,10 @@ public class BinaryThreadRecorder implements ThreadRecorder {
   /** Pending consecutive exits. */
   protected long pendingExits = 0L;
 
+  /**
+   * @param outputDir Path to output directory
+   * @throws IOException If an I/O error occurs when opening an output stream.
+   */
   public BinaryThreadRecorder(Path outputDir) throws IOException {
     this.fileName = "thread-" + Thread.currentThread().getId() + ".flow";
     this.out =
@@ -171,6 +175,9 @@ public class BinaryThreadRecorder implements ThreadRecorder {
             64 * 1024);
   }
 
+  /**
+   * @return The file name this recorder is writing to
+   */
   public String getFileName() {
     return fileName;
   }
@@ -186,6 +193,11 @@ public class BinaryThreadRecorder implements ThreadRecorder {
     pendingExits++;
   }
 
+  /**
+   * Flush a pending exit event if there is one.
+   *
+   * @throws IOException If an I/O error occurs when writing to file.
+   */
   protected void flushPendingExits() throws IOException {
     if (pendingExits == 0L) {
       return;
@@ -204,6 +216,9 @@ public class BinaryThreadRecorder implements ThreadRecorder {
    *   bit 7     : continuation (1 if more bytes follow)
    *   bits 6-0  : next 7 bits of value
    * </code></pre>
+   *
+   * @param value The positive integer to encode
+   * @throws IOException If an I/O error occurs when writing to file.
    */
   protected void writeVarInt(long value) throws IOException {
     while ((value & M_PAYLOAD_REST) != 0) {
@@ -225,6 +240,10 @@ public class BinaryThreadRecorder implements ThreadRecorder {
    * </code></pre>
    *
    * Following bytes (if any) are encoded using {@link #writeVarInt(long) writeVarInt}.
+   *
+   * @param flag The event flag
+   * @param value The positive integer to encode
+   * @throws IOException If an I/O error occurs when writing to file.
    */
   protected void writeFlagAndVarInt(int flag, long value) throws IOException {
     // Extract lowest 6 bits for first byte
