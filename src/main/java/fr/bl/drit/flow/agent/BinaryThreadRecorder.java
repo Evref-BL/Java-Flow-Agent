@@ -8,18 +8,119 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 
 /**
- * Call tree binary recorder.
+ * Records a call tree in a compact binary format.
  *
- * <pre>
- *   [ENTER:0x80][METHOD_ID:packed_varint]
- *   [EXIT:0x00][COUNT:packed_varint]
- * </pre>
+ * <h2>Overview</h2>
  *
- * Where METHOD_ID refers to the ID of the method stored... TODO
+ * <p>The generated {@code .flow} file is a linear sequence of events without any global header. Two
+ * event types exist:
+ *
+ * <ul>
+ *   <li><b>ENTER</b>: a method entry event
+ *   <li><b>EXIT</b>: one or more consecutive method exits
+ * </ul>
+ *
+ * <p>Method identifiers are numeric values assigned by a {@link MethodIdMapping} and stored in a
+ * separate file. The mapping associates a method identifier with a fully qualified method
+ * signature.
+ *
+ * <h2>Event Structure</h2>
+ *
+ * <p>Each event starts with a single byte that encodes both:
+ *
+ * <ul>
+ *   <li>the event type (ENTER or EXIT), and
+ *   <li>the beginning of an unsigned variable-length integer.
+ * </ul>
+ *
+ * <p>The most significant bit (bit 7) determines the event type:
+ *
+ * <ul>
+ *   <li>{@code 1} ({@link #F_ENTER}): ENTER event
+ *   <li>{@code 0} ({@link #F_EXIT}): EXIT event
+ * </ul>
+ *
+ * <h2>Packed First Byte Layout</h2>
+ *
+ * <p>The first byte of every event has the following structure:
+ *
+ * <pre><code class="language-text">
+ *   bit 7     : flag (1 = ENTER, 0 = EXIT)
+ *   bit 6     : continuation bit (1 = more bytes follow)
+ *   bits 5-0  : lowest 6 bits of the encoded value
+ * </code></pre>
+ *
+ * <p>The encoded value depends on the event type:
+ *
+ * <ul>
+ *   <li>For ENTER events: the value is the method ID.
+ *   <li>For EXIT events: the value is the number of <i>additional</i> consecutive exits.
+ * </ul>
+ *
+ * <h2>Variable-Length Integer Encoding</h2>
+ *
+ * <p>All integer values are encoded as unsigned variable-length integers in a format equivalent to
+ * LEB128.
+ *
+ * <p>After the first byte, if the continuation bit (bit 6) is set, the remaining higher-order bits
+ * of the value are encoded using standard 7-bit groups:
+ *
+ * <pre><code class="language-text">
+ *   bit 7     : continuation (1 = more bytes follow)
+ *   bits 6-0  : next 7 bits of the value
+ * </code></pre>
+ *
+ * <p>Each subsequent byte contributes 7 additional bits to the value. Decoding proceeds by
+ * accumulating payload bits while continuation bits are set.
+ *
+ * <h2>ENTER Event</h2>
+ *
+ * <p>An ENTER event encodes a single method entry as {@code [flag=1][methodId]}. The {@code
+ * methodId} refers to the numeric identifier defined in the ID mapping file.
+ *
+ * <p>Example with {@code methodId = 1}: {@code 1000 0001}
+ *
+ * <p>Example with {@code methodId = 8192}: {@code 1100 0000 0000 0001}
+ *
+ * <h2>EXIT Event</h2>
+ *
+ * <p>EXIT events are run-length encoded.
+ *
+ * <p>Instead of writing one byte per exit, consecutive exits are accumulated internally and flushed
+ * as a single event.
+ *
+ * <ul>
+ *   <li>If exactly one exit occurred: {@code [flag=0]} (no continuation, no payload)
+ *   <li>If {@code n > 1} consecutive exits occurred: {@code [flag=0][n - 1]}
+ * </ul>
+ *
+ * <p>This means:
+ *
+ * <ul>
+ *   <li>{@code value == 0} represents a single exit.
+ *   <li>{@code value == k} represents {@code k + 1} consecutive exits.
+ * </ul>
+ *
+ * <p>This run-length encoding significantly reduces file size when methods return in bursts.
+ *
+ * <h2>Decoding Algorithm (High-Level)</h2>
+ *
+ * <ol>
+ *   <li>Read first byte.
+ *   <li>Extract event type from bit 7.
+ *   <li>Extract continuation bit from bit 6.
+ *   <li>Extract lower 6 bits as initial value.
+ *   <li>If continuation is set, read additional LEB128 bytes and accumulate 7-bit groups.
+ *   <li>If ENTER: emit method entry with decoded {@code methodId}.
+ *   <li>If EXIT: emit {@code value + 1} exits.
+ * </ol>
+ *
+ * @see #writeVarInt(long)
+ * @see #writeFlagAndVarInt(int, long)
  */
 public class BinaryThreadRecorder implements ThreadRecorder {
 
-  // === Event flags ===
+  // ---------- Event flags ----------
 
   /** Highest bit is 1 (0x80). */
   public static final byte F_ENTER = (byte) 0x80;
@@ -27,7 +128,7 @@ public class BinaryThreadRecorder implements ThreadRecorder {
   /** Highest bit is 0 (0x00). */
   public static final byte F_EXIT = 0x00;
 
-  // === Masks ===
+  // ---------- Masks ----------
 
   /** Flag bit, the highest bit (0x80). */
   public static final byte M_FLAG = (byte) 0x80;
@@ -47,14 +148,15 @@ public class BinaryThreadRecorder implements ThreadRecorder {
   /** Payload in a packed varint, the lowest 6 bits (0x3F). */
   public static final byte M_PACK_PAYLOAD = 0x3F;
 
-  // === State ===
+  // ---------- State ----------
 
   /** Output stream for the binary call tree data of the recorder's thread. */
   protected final OutputStream out;
 
+  /** The file containing the call tree data of the recorder's thread. */
   protected final String fileName;
 
-  /** Additional consecutive exits, 0 means exactly one exit. */
+  /** Pending consecutive exits. */
   protected long pendingExits = 0L;
 
   public BinaryThreadRecorder(Path outputDir) throws IOException {
@@ -96,7 +198,7 @@ public class BinaryThreadRecorder implements ThreadRecorder {
   }
 
   /**
-   * Write an unsigned variable-length integer (LEB128 style).
+   * Write an unsigned variable-length integer (LEB128-style).
    *
    * <pre><code class="language-text">
    *   bit 7     : continuation (1 if more bytes follow)
@@ -112,12 +214,12 @@ public class BinaryThreadRecorder implements ThreadRecorder {
   }
 
   /**
-   * Write unsigned variable-length integer with a 2-bit flag packed into the first byte.
+   * Write unsigned variable-length integer with a 1-bit flag packed into the first byte.
    *
    * <p>First byte layout:
    *
    * <pre><code class="language-text">
-   *   bit 7    : flag
+   *   bit 7     : flag
    *   bit 6     : continuation (1 if more bytes follow)
    *   bits 5-0  : lowest 6 bits of value
    * </code></pre>

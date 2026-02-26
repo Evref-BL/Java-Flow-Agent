@@ -15,7 +15,7 @@ import org.junit.jupiter.api.io.TempDir;
 /** Tests for {@link BinaryThreadRecorder}. */
 public class BinaryThreadRecorderTest {
 
-  @TempDir private Path tempDir;
+  @TempDir private static Path tempDir;
 
   /** Expected LEB128 unsigned encoding (same algorithm used in writeVarInt). */
   private static byte[] leb128Expected(long value) {
@@ -130,12 +130,17 @@ public class BinaryThreadRecorderTest {
     try (BinaryThreadRecorder rec = new BinaryThreadRecorder(tempDir)) {
       outputPath = rec.getFileName();
       // value fits in 5 bits (<=31), no continuation
-      rec.writeFlagAndVarInt(F_ENTER, 10L); // 0x80|10 = 0x8A
-      rec.writeFlagAndVarInt(F_EXIT, 31L); // 0x00|31 = 0x1F
+      rec.writeFlagAndVarInt(F_ENTER, 0L); // 0x80|0x0 = 0x80
+      rec.writeFlagAndVarInt(F_ENTER, 10L); // 0x80|0x0A = 0x8A
+      rec.writeFlagAndVarInt(F_ENTER, 63L); // 0x80|0x3F = 0xBF
+
+      rec.writeFlagAndVarInt(F_EXIT, 0L); // 0x0|0x0 = 0x0
+      rec.writeFlagAndVarInt(F_EXIT, 10L); // 0x0|0x0A = 0x0A
+      rec.writeFlagAndVarInt(F_EXIT, 63L); // 0x0|0x3F = 0x3F
     }
 
     byte[] actual = Files.readAllBytes(tempDir.resolve(outputPath));
-    byte[] expected = new byte[] {(byte) 0x8A, (byte) 0x1F};
+    byte[] expected = new byte[] {(byte) 0x80, (byte) 0x8A, (byte) 0xBF, 0x0, 0x0A, 0x3F};
     assertBytesEquals(expected, actual);
   }
 
@@ -144,21 +149,54 @@ public class BinaryThreadRecorderTest {
     String outputPath = null;
     try (BinaryThreadRecorder rec = new BinaryThreadRecorder(tempDir)) {
       outputPath = rec.getFileName();
-      // value = 64 -> firstPayload=0, remainder=1 -> [flag+cont+0][0x01]
-      rec.writeFlagAndVarInt(F_ENTER, 64L);
-      // value = 300 (0x12C): low6=44, remainder=4 -> [flag+cont+44][0x04]
-      rec.writeFlagAndVarInt(F_EXIT, 300L);
+      rec.writeFlagAndVarInt(F_ENTER, 64L); // [0x80|0x40|0x0][0x0|0x01]
+      rec.writeFlagAndVarInt(F_ENTER, 300L); // [0x80|0x40|0x2C][0x0|0x04]
+      rec.writeFlagAndVarInt(F_ENTER, 8192L); // [0x80|0x40|0x0][0x40|0x0][0x0|0x01]
+
+      rec.writeFlagAndVarInt(F_EXIT, 64L); // [0x0|0x40|0x0][0x0|0x01]
+      rec.writeFlagAndVarInt(F_EXIT, 300L); // [0x0|0x40|0x2C][0x0|0x04]
+      rec.writeFlagAndVarInt(F_EXIT, 8192L); // [0x0|0x40|0x0][0x0|0x0][0x0|0x01]
     }
 
+    byte[] enter1 =
+        new byte[] {
+          F_ENTER | M_PACK_CONT | (byte) (64L & M_PACK_PAYLOAD), (byte) ((64L >>> 6) & M_PAYLOAD)
+        };
+    byte[] enter2 =
+        new byte[] {
+          F_ENTER | M_PACK_CONT | (byte) (300L & M_PACK_PAYLOAD), (byte) ((300L >>> 6) & M_PAYLOAD)
+        };
+    byte[] enter3 =
+        new byte[] {
+          F_ENTER | M_PACK_CONT | (byte) (8192L & M_PACK_PAYLOAD),
+          M_CONT | (byte) ((8192L >>> 6) & M_PAYLOAD),
+          (byte) ((8192L >>> (6 + 7)) & M_PAYLOAD)
+        };
+
+    byte[] exit1 =
+        new byte[] {
+          F_EXIT | M_PACK_CONT | (byte) (64L & M_PACK_PAYLOAD), (byte) ((64L >>> 6) & M_PAYLOAD)
+        };
+    byte[] exit2 =
+        new byte[] {
+          F_EXIT | M_PACK_CONT | (byte) (300L & M_PACK_PAYLOAD), (byte) ((300L >>> 6) & M_PAYLOAD)
+        };
+    byte[] exit3 =
+        new byte[] {
+          F_EXIT | M_PACK_CONT | (byte) (8192L & M_PACK_PAYLOAD),
+          M_CONT | (byte) ((8192L >>> 6) & M_PAYLOAD),
+          (byte) ((8192L >>> (6 + 7)) & M_PAYLOAD)
+        };
+
     byte[] actual = Files.readAllBytes(tempDir.resolve(outputPath));
+    byte[] expected = concat(enter1, enter2, enter3, exit1, exit2, exit3);
 
-    byte[] expected1 = new byte[] {F_ENTER | 0x40, 0x01};
-    int firstPayload = (int) (300L & M_PACK_PAYLOAD); // 44 = 0x2C
-    byte firstByte = (byte) (F_EXIT | M_PACK_CONT | firstPayload);
-    byte secondByte = (byte) ((300L >>> 6) & M_PAYLOAD); // 4 = 0x04
-    byte[] expected2 = new byte[] {firstByte, secondByte};
+    StringBuilder sb = new StringBuilder();
+    for (byte b : enter2) {
+      sb.append(String.format("%02X ", b));
+    }
+    System.out.println(sb.toString());
 
-    byte[] expected = concat(expected1, expected2);
     assertBytesEquals(expected, actual);
   }
 

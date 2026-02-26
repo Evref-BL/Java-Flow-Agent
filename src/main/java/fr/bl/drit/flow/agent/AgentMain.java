@@ -21,7 +21,7 @@ import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
 /**
- * The Java flow agent entry point. It records method call trees for target classes and writes them
+ * The Java Flow agent entry point. It records method call trees for target classes and writes them
  * to files in a supplied directory. The directory will contain a method ID mapping file and a call
  * tree file for each thread. The call tree file format can be configured using the format argument,
  * which currently supports two formats: a compact binary format (.flow) and a more verbose JSON
@@ -229,12 +229,6 @@ public class AgentMain {
       if (trimmed.isEmpty()) continue;
 
       String[] kv = trimmed.split("=", 2);
-      if (kv.length != 2) {
-        System.err.println(
-            "[flow-agent] Ignoring invalid agent argument entry (expected key=value): " + trimmed);
-        continue;
-      }
-
       String key = kv[0].trim();
       String value = kv[1].trim();
 
