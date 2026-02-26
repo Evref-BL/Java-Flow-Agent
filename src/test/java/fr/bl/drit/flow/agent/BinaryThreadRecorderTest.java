@@ -3,10 +3,8 @@ package fr.bl.drit.flow.agent;
 import static fr.bl.drit.flow.agent.BinaryThreadRecorder.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -19,7 +17,7 @@ public class BinaryThreadRecorderTest {
 
   @TempDir private Path tempDir;
 
-  // helper: expected LEB128 unsigned encoding (same algorithm used in writeVarInt)
+  /** Expected LEB128 unsigned encoding (same algorithm used in writeVarInt). */
   private static byte[] leb128Expected(long value) {
     ByteArrayOutputStream baos = new ByteArrayOutputStream();
     while ((value & M_PAYLOAD_REST) != 0) {
@@ -102,18 +100,18 @@ public class BinaryThreadRecorderTest {
 
   @Test
   public void testWriteVarInt_smallValues() throws Exception {
-    Path tmp = Files.createTempFile(tempDir, "test-rec-varint-", ".flow");
-
-    try (BinaryThreadRecorder r = new BinaryThreadRecorder(tmp)) {
-      r.writeVarInt(0L);
-      r.writeVarInt(1L);
-      r.writeVarInt(127L);
-      r.writeVarInt(128L);
-      r.writeVarInt(300L);
-      r.writeVarInt(Long.MAX_VALUE);
+    String outputPath = null;
+    try (BinaryThreadRecorder rec = new BinaryThreadRecorder(tempDir)) {
+      outputPath = rec.getFileName();
+      rec.writeVarInt(0L);
+      rec.writeVarInt(1L);
+      rec.writeVarInt(127L);
+      rec.writeVarInt(128L);
+      rec.writeVarInt(300L);
+      rec.writeVarInt(Long.MAX_VALUE);
     }
 
-    byte[] actual = Files.readAllBytes(tmp);
+    byte[] actual = Files.readAllBytes(tempDir.resolve(outputPath));
 
     byte[] e0 = leb128Expected(0L); // 00
     byte[] e1 = leb128Expected(1L); // 01
@@ -128,31 +126,31 @@ public class BinaryThreadRecorderTest {
 
   @Test
   public void testWriteFlagAndVarInt_singleByteNoContinuation() throws Exception {
-    Path tmp = Files.createTempFile(tempDir, "test-rec-flag-", ".flow");
-
-    try (BinaryThreadRecorder r = new BinaryThreadRecorder(tmp)) {
+    String outputPath = null;
+    try (BinaryThreadRecorder rec = new BinaryThreadRecorder(tempDir)) {
+      outputPath = rec.getFileName();
       // value fits in 5 bits (<=31), no continuation
-      r.writeFlagAndVarInt(F_ENTER, 10L); // 0x80|10 = 0x8A
-      r.writeFlagAndVarInt(F_EXIT, 31L); // 0x00|31 = 0x1F
+      rec.writeFlagAndVarInt(F_ENTER, 10L); // 0x80|10 = 0x8A
+      rec.writeFlagAndVarInt(F_EXIT, 31L); // 0x00|31 = 0x1F
     }
 
-    byte[] actual = Files.readAllBytes(tmp);
+    byte[] actual = Files.readAllBytes(tempDir.resolve(outputPath));
     byte[] expected = new byte[] {(byte) 0x8A, (byte) 0x1F};
     assertBytesEquals(expected, actual);
   }
 
   @Test
   public void testWriteFlagAndVarInt_withContinuation() throws Exception {
-    Path tmp = Files.createTempFile(tempDir, "test-rec-flag-cont-", ".flow");
-
-    try (BinaryThreadRecorder r = new BinaryThreadRecorder(tmp)) {
+    String outputPath = null;
+    try (BinaryThreadRecorder rec = new BinaryThreadRecorder(tempDir)) {
+      outputPath = rec.getFileName();
       // value = 64 -> firstPayload=0, remainder=1 -> [flag+cont+0][0x01]
-      r.writeFlagAndVarInt(F_ENTER, 64L);
+      rec.writeFlagAndVarInt(F_ENTER, 64L);
       // value = 300 (0x12C): low6=44, remainder=4 -> [flag+cont+44][0x04]
-      r.writeFlagAndVarInt(F_EXIT, 300L);
+      rec.writeFlagAndVarInt(F_EXIT, 300L);
     }
 
-    byte[] actual = Files.readAllBytes(tmp);
+    byte[] actual = Files.readAllBytes(tempDir.resolve(outputPath));
 
     byte[] expected1 = new byte[] {F_ENTER | 0x40, 0x01};
     int firstPayload = (int) (300L & M_PACK_PAYLOAD); // 44 = 0x2C
@@ -166,16 +164,16 @@ public class BinaryThreadRecorderTest {
 
   @Test
   public void testEnterAndExit() throws Exception {
-    Path tmp = Files.createTempFile(tempDir, "test-rec-", ".flow");
-
-    try (BinaryThreadRecorder rec = new BinaryThreadRecorder(tmp)) {
+    String outputPath = null;
+    try (BinaryThreadRecorder rec = new BinaryThreadRecorder(tempDir)) {
+      outputPath = rec.getFileName();
       rec.enter(1L);
       rec.exit();
       rec.enter(1L); // same id
       rec.exit();
     }
 
-    try (InputStream in = new BufferedInputStream(new FileInputStream(tmp.toFile()))) {
+    try (InputStream in = Files.newInputStream(tempDir.resolve(outputPath))) {
       // first event should be packed ENTER
       Object[] p1 = readFlagAndVarInt(in);
       byte flag1 = (byte) p1[0];

@@ -5,26 +5,24 @@ import java.nio.file.Path;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
+/** A recorder that orchestrates per-thread recorders. */
 public final class ThreadLocalRecorder implements Recorder {
 
-  private final ThreadLocal<Recorder> local;
-  private final Queue<Recorder> all = new ConcurrentLinkedQueue<>();
+  private final ThreadLocal<ThreadRecorder> local;
+  private final Queue<ThreadRecorder> all = new ConcurrentLinkedQueue<>();
 
-  public ThreadLocalRecorder(ThreadRecorderFactory factory, Path output) throws IOException {
+  public ThreadLocalRecorder(ThreadRecorderFactory factory, Path outputDir) throws IOException {
     this.local =
         ThreadLocal.withInitial(
             () -> {
-              Thread thread = Thread.currentThread();
-              long tid = thread.getId();
-              Recorder recorder = null;
               try {
-                recorder =
-                    factory.createForCurrentThread(output.resolve("thread-" + tid + ".flow"));
+                ThreadRecorder recorder = factory.createForCurrentThread(outputDir);
+                all.add(recorder);
+                return recorder;
               } catch (IOException e) {
-                throw new RuntimeException("Failed to create recorder for thread " + thread, e);
+                throw new RuntimeException(
+                    "Failed to create recorder for thread " + Thread.currentThread(), e);
               }
-              all.add(recorder);
-              return recorder;
             });
   }
 
@@ -41,7 +39,7 @@ public final class ThreadLocalRecorder implements Recorder {
   /** Flush and close all per-thread streams at shutdown. */
   @Override
   public void close() throws IOException {
-    for (Recorder recorder : all) {
+    for (ThreadRecorder recorder : all) {
       recorder.close();
     }
   }

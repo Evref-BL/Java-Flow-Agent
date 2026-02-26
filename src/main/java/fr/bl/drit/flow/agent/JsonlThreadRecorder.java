@@ -14,21 +14,29 @@ import java.nio.file.StandardOpenOption;
  *
  * <p>Each line is either: - {"e":"enter","method":"<id>"} - {"e":"exit"}
  */
-public final class JsonlThreadRecorder implements Recorder {
+public final class JsonlThreadRecorder implements ThreadRecorder {
 
+  /** Writer for the call tree data of the recorder's thread. */
   private final Writer out;
 
-  public JsonlThreadRecorder(Path output) throws IOException {
+  private final String fileName;
+
+  public JsonlThreadRecorder(Path outputDir) throws IOException {
+    this.fileName = "thread-" + Thread.currentThread().getId() + ".jsonl";
     this.out =
         new BufferedWriter(
             new OutputStreamWriter(
                 Files.newOutputStream(
-                    output,
+                    outputDir.resolve(this.fileName),
                     StandardOpenOption.CREATE,
                     StandardOpenOption.WRITE,
                     StandardOpenOption.TRUNCATE_EXISTING),
                 StandardCharsets.UTF_8),
             64 * 1024);
+  }
+
+  public String getFileName() {
+    return fileName;
   }
 
   @Override

@@ -22,20 +22,20 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Utilities to read existing method-id mapping, count method invocations from BinaryThreadRecorder
+ * Utilities to read existing method ID mapping, count method invocations from {@link Recorder}
  * trace files, and produce an optimized mapping.
  */
 public final class MethodIdRemapper {
 
   private MethodIdRemapper() {}
 
-  // ---------- I/O for mapping files (key=id) ----------
-
+  /** Read mapping from a file. */
   private static Map<String, Long> readMapping(Path mappingFile) throws IOException {
     Map<String, Long> map = new LinkedHashMap<>();
     if (!Files.exists(mappingFile)) {
       return map;
     }
+
     try (BufferedReader r = Files.newBufferedReader(mappingFile, StandardCharsets.UTF_8)) {
       String line;
       while ((line = r.readLine()) != null) {
@@ -53,7 +53,7 @@ public final class MethodIdRemapper {
     return map;
   }
 
-  // ---------- Trace parsing (BinaryThreadRecorder encoding) ----------
+  // ---------- Trace parsing of BinaryThreadRecorder encoding ----------
 
   /**
    * Count enter events in all files under inputDir (non-recursive). The previousMapping is used to
@@ -62,8 +62,8 @@ public final class MethodIdRemapper {
    * <p>Returns a map methodKey -> count (0 if never seen), and prints diagnostics via returned
    * result (counts + number of unknown ids).
    */
-  private static Map<String, Long> countCallsFromFlowDirectory(
-      Path inputDir, Map<String, Long> previousMapping) throws IOException {
+  private static Map<String, Long> countCalls(Path inputDir, Map<String, Long> previousMapping)
+      throws IOException {
     Map<Long, String> idToKey = invertMapping(previousMapping);
     Map<String, Long> counts = new HashMap<>();
 
@@ -155,10 +155,10 @@ public final class MethodIdRemapper {
   // ---------- Optimization: sort by frequency ----------
 
   /**
-   * Create a new dense mapping by sorting methods by descending count. Tie-breaker: previousId
-   * (ascending, missing previousId treated as Long.MAX_VALUE), then method key lexicographic.
+   * Create a new mapping by sorting methods by descending count. Tie-breaker: method key
+   * lexicographically.
    *
-   * <p>Returns map methodKey -> newId.
+   * @return Ordered map of methodKey -> newId
    */
   private static Map<String, Long> optimizeMappingByCounts(
       Map<String, Long> previousMapping, Map<String, Long> counts) {
@@ -167,28 +167,16 @@ public final class MethodIdRemapper {
     allKeys.addAll(previousMapping.keySet());
     allKeys.addAll(counts.keySet());
 
-    class Entry {
-      final String key;
-      final long count;
-      final long prevId;
-
-      Entry(String k, long c, long p) {
-        key = k;
-        count = c;
-        prevId = p;
-      }
-    }
+    record Entry(String key, long count) {}
 
     List<Entry> list = new ArrayList<>(allKeys.size());
-    for (String k : allKeys) {
-      long c = counts.getOrDefault(k, 0L);
-      long p = previousMapping.getOrDefault(k, Long.MAX_VALUE);
-      list.add(new Entry(k, c, p));
+    for (String key : allKeys) {
+      long count = counts.getOrDefault(key, 0L);
+      list.add(new Entry(key, count));
     }
 
     list.sort(
         Comparator.comparingLong((Entry e) -> -e.count) // desc count
-            .thenComparingLong(e -> e.prevId) // asc previous id
             .thenComparing(e -> e.key) // deterministic lexicographic
         );
 
@@ -200,27 +188,26 @@ public final class MethodIdRemapper {
     return out;
   }
 
-  // ---------- Convenience: orchestrator used by your agent ----------
-
   /**
-   * Orchestrate reading previous mapping, scanning traces, optimizing and writing.
+   * Scan existing traces and mapping. Then, optimize the mapping and write it.
    *
-   * @param inputDir directory containing binary trace files
+   * @param inputDir directory containing trace files
    * @param outputDir directory where optimized mapping will be written
+   * @return path to optimized mapping file
+   * @throws IOException
    */
-  public static Path optimizeFromFlowDirectory(Path inputDir, Path outputDir) throws IOException {
+  public static Path optimize(Path inputDir, Path outputDir) throws IOException {
     Path idsFile = inputDir.resolve("ids.properties");
     if (!Files.exists(idsFile)) {
       throw new FileNotFoundException("ids.properties not found in " + inputDir);
     }
 
     Map<String, Long> previous = readMapping(idsFile);
-    Map<String, Long> counts = countCallsFromFlowDirectory(inputDir, previous);
+    Map<String, Long> counts = countCalls(inputDir, previous);
     Map<String, Long> optimized = optimizeMappingByCounts(previous, counts);
 
     Path outPath = outputDir.resolve("ids.properties");
-
-    MethodIdRegistry.dump(optimized, outPath);
+    MethodIdMapping.dump(optimized, outPath);
     return outPath;
   }
 }

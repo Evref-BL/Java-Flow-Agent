@@ -8,15 +8,15 @@ import net.bytebuddy.implementation.bytecode.assign.Assigner;
 import net.bytebuddy.implementation.bytecode.constant.LongConstant;
 
 /**
- * Custom OffsetMapping to inject method IDs into the advice. Method IDs are assigned by the
- * provided {@link MethodIdRegistry}.
+ * Custom {@link net.bytebuddy.asm.Advice.OffsetMapping OffsetMapping} to inject method IDs into the
+ * advice. Method IDs are assigned by the provided {@link MethodIdMapping}.
  */
 @HashCodeAndEqualsPlugin.Enhance
 public final class MethodIdOffsetMapping implements Advice.OffsetMapping {
-  private final MethodIdRegistry registry;
+  private final MethodIdMapping mapping;
 
-  MethodIdOffsetMapping(MethodIdRegistry registry) {
-    this.registry = registry;
+  MethodIdOffsetMapping(MethodIdMapping mapping) {
+    this.mapping = mapping;
   }
 
   @Override
@@ -32,7 +32,7 @@ public final class MethodIdOffsetMapping implements Advice.OffsetMapping {
             + instrumentedMethod.getInternalName()
             + instrumentedMethod.getDescriptor();
 
-    long id = registry.idFor(key);
+    long id = mapping.idFor(key);
 
     return new Advice.OffsetMapping.Target.ForStackManipulation(LongConstant.forValue(id));
   }

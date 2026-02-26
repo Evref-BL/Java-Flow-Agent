@@ -3,11 +3,11 @@ package fr.bl.drit.flow.agent;
 import java.io.Closeable;
 import java.io.IOException;
 
-/** Common interface for execution recorders. */
+/** Specifies a recorder that is used to record flow data. */
 public interface Recorder extends Closeable {
-  /** Emit an enter event for the given class and method signature. */
+  /** Emit a method enter event with the given method ID. */
   void enter(long methodId) throws IOException;
 
-  /** Emit an exit event for the given invocation id. */
+  /** Emit a method exit event. */
   void exit() throws IOException;
 }

@@ -6,7 +6,6 @@ import static net.bytebuddy.matcher.ElementMatchers.isMethod;
 import static net.bytebuddy.matcher.ElementMatchers.nameStartsWith;
 import static net.bytebuddy.matcher.ElementMatchers.not;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.lang.instrument.Instrumentation;
@@ -22,11 +21,45 @@ import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
 /**
- * Java agent entrypoint.
+ * The Java flow agent entry point. It records method call trees for target classes and writes them
+ * to files in a supplied directory. The directory will contain a method ID mapping file and a call
+ * tree file for each thread. The call tree file format can be configured using the format argument,
+ * which currently supports two formats: a compact binary format (.flow) and a more verbose JSON
+ * Lines format (.jsonl). Both formats consist of two types of events: method entry and method exit.
+ * Method entries are recorded with the ID of the entered method, which can be found in the method
+ * ID mapping.
  *
- * <p>agentArgs are comma-separated key=value pairs, e.g. target=com.myapp.,out=/tmp/flow/
- * <li>{@code target} is required.
- * <li>{@code out} is required.
+ * <p>Arguments are comma-separated key=value pairs. The supported arguments are:
+ *
+ * <ul>
+ *   <li>target (required) -> '+'-separated list of class name prefixes to instrument
+ *   <li>out (required) -> output directory, will contain method ID mapping and per-thread call tree
+ *       files
+ *   <li>format (optional) -> "binary" (default) or "jsonl"
+ *   <li>optimize (optional) -> path to flow directory to optimize method ID mapping
+ *   <li>ids (optional) -> path to existing method ID mapping file
+ * </ul>
+ *
+ * <pre>
+ * <code class="language-properties">
+ * Minimal example: target=com.myapp.,out=/tmp/flow/
+ * </code>
+ * </pre>
+ *
+ * Use the {@code optimize} argument to optimize method IDs by leveraging an existing mapping of
+ * method IDs and flow files. Method IDs are natural numbers. Those that are called more frequently
+ * will have smaller IDs. Using the {@code binary} format with variable-length integer encoding
+ * significantly reduces the size of the recorded call tree data. The optimized mapping will be
+ * written to the output directory and can be reused in subsequent runs by specifying its location
+ * using the {@code ids} argument. Refer to the {@link MethodIdRemapper} class comment for more
+ * details about the optimization process.
+ *
+ * <pre>
+ * <code class="language-properties">
+ * Example with optimization: target=com.myapp.,optimize=/tmp/flow/,out=/tmp/optimized-flow/
+ * Then reuse optimized mapping: target=com.myapp.,ids=/tmp/optimized-flow/ids.properties,out=/tmp/optimized-flow-2/
+ * </code>
+ * </pre>
  */
 public class AgentMain {
 
@@ -41,12 +74,12 @@ public class AgentMain {
   private static void init(String agentArgs, Instrumentation inst) {
     // === parse arguments ===
 
-    final Map<String, String> args = parseAgentArgs(agentArgs);
+    final Map<String, String> args = parseArgs(agentArgs);
     final String target = args.get("target");
     final String outputPath = args.get("out");
     final String format = args.getOrDefault("format", "binary");
     final String optimizePath = args.get("optimize");
-    String registryPath = args.get("registry");
+    String mappingPath = args.get("ids"); // can be overwritten if optimize is used
 
     if (target.isEmpty()) {
       System.err.println(
@@ -65,9 +98,9 @@ public class AgentMain {
     // === process arguments ===
 
     // target classes
-    ElementMatcher<TypeDescription> typeMatcher = typeMatcher(target);
+    final ElementMatcher<TypeDescription> typeMatcher = typeMatcher(target);
     if (typeMatcher == null) {
-      System.err.println("[flow-agent] No valid prefixes found in 'target' argument.");
+      System.err.println("[flow-agent] No prefixes found in 'target' argument.");
       return;
     }
     System.out.println("[flow-agent] Instrumenting classes starting with: " + target);
@@ -92,32 +125,30 @@ public class AgentMain {
         };
     System.out.println("[flow-agent] Using call tree format: " + format);
 
-    // optimize method ID registry, set or overwrite 'registryPath' argument
+    // optimize method ID mapping, set or overwrite 'ids' argument
     if (optimizePath != null) {
       try {
-        Path optimizedRegistry =
-            MethodIdRemapper.optimizeFromFlowDirectory(Paths.get(optimizePath), outputDir);
-        registryPath = optimizedRegistry.toAbsolutePath().normalize().toString();
-        System.out.println("[flow-agent] Optimized method registry: " + registryPath);
+        Path optimizedMapping = MethodIdRemapper.optimize(Paths.get(optimizePath), outputDir);
+        mappingPath = optimizedMapping.toAbsolutePath().normalize().toString();
+        System.out.println("[flow-agent] Optimized method mapping: " + mappingPath);
       } catch (IOException e) {
-        System.err.println("[flow-agent] Failed to optimize method registry: " + e);
+        System.err.println("[flow-agent] Failed to optimize method mapping: " + e);
       }
     }
 
-    // method ID registry
-    final MethodIdRegistry idRegistry;
-    if (registryPath != null) {
+    // method ID mapping
+    final MethodIdMapping idMapping;
+    if (mappingPath != null) {
       try {
-        idRegistry = new MethodIdRegistry(new File(registryPath));
+        idMapping = new MethodIdMapping(Paths.get(mappingPath));
         System.out.println(
-            "[flow-agent] Loaded " + idRegistry.size() + " method IDs from " + registryPath);
+            "[flow-agent] Loaded " + idMapping.size() + " method IDs from " + mappingPath);
       } catch (IOException e) {
-        System.err.println(
-            "[flow-agent] Failed to load method IDs from " + registryPath + ": " + e);
+        System.err.println("[flow-agent] Failed to load method IDs from " + mappingPath + ": " + e);
         return;
       }
     } else {
-      idRegistry = new MethodIdRegistry();
+      idMapping = new MethodIdMapping();
     }
 
     // === recorder setup ===
@@ -129,7 +160,7 @@ public class AgentMain {
       e.printStackTrace();
     }
 
-    final String finalRegistryPath = registryPath;
+    final String finalMappingPath = mappingPath;
 
     // register shutdown hook to close recorder
     Runtime.getRuntime()
@@ -139,8 +170,8 @@ public class AgentMain {
                   try {
                     Singletons.RECORDER.close();
 
-                    if (finalRegistryPath == null) {
-                      idRegistry.dump(outputDir.resolve("ids.properties"));
+                    if (finalMappingPath == null) {
+                      idMapping.dump(outputDir.resolve("ids.properties"));
                     }
 
                     System.out.println("[flow-agent] Flow written to " + outputDir);
@@ -154,7 +185,7 @@ public class AgentMain {
 
     Advice advice =
         Advice.withCustomMapping()
-            .bind(MethodId.class, new MethodIdOffsetMapping(idRegistry))
+            .bind(MethodId.class, new MethodIdOffsetMapping(idMapping))
             .to(FlowAdvice.class);
 
     ElementMatcher<MethodDescription> methodMatcher =
@@ -171,26 +202,28 @@ public class AgentMain {
                 (builder, typeDescription, classLoader, module, protectionDomain) ->
                     builder.visit(advice.on(methodMatcher)));
 
-    // agentBuilder = agentBuilder.with(AgentBuilder.Listener.StreamWriting.toSystemOut());
+    // agentBuilder =
+    // agentBuilder.with(AgentBuilder.Listener.StreamWriting.toSystemOut());
 
     agentBuilder.installOn(inst);
   }
 
   /**
-   * Parse agentArgs using: - top-level pair separator: ',' - key/value separator: '='
+   * Parse agent arguments into a dictionary using:
    *
-   * <p>Supported keys: - target (required) -> '+'-separated list - out (optional)
-   *
-   * <p>Example: target=com.myapp.+org.example.service,out=/tmp/cg
+   * <ul>
+   *   <li>argument separator: ','
+   *   <li>key/value separator: '='
+   * </ul>
    */
-  private static Map<String, String> parseAgentArgs(String agentArgs) {
+  private static Map<String, String> parseArgs(String args) {
     Map<String, String> map = new HashMap<>();
 
-    if (agentArgs == null || agentArgs.trim().isEmpty()) {
+    if (args == null || args.trim().isEmpty()) {
       return map;
     }
 
-    String[] pairs = agentArgs.split(",");
+    String[] pairs = args.split(",");
     for (String pair : pairs) {
       String trimmed = pair.trim();
       if (trimmed.isEmpty()) continue;
@@ -198,7 +231,7 @@ public class AgentMain {
       String[] kv = trimmed.split("=", 2);
       if (kv.length != 2) {
         System.err.println(
-            "[flow-agent] Invalid agent argument entry (expected key=value): " + trimmed);
+            "[flow-agent] Ignoring invalid agent argument entry (expected key=value): " + trimmed);
         continue;
       }
 
@@ -206,26 +239,17 @@ public class AgentMain {
       String value = kv[1].trim();
 
       if (key.isEmpty() || value.isEmpty()) {
-        System.err.println("[flow-agent] Invalid key/value in agent argument: " + trimmed);
+        System.err.println("[flow-agent] Ignoring empty key/value in agent argument: " + trimmed);
         continue;
       }
 
       map.put(key, value);
     }
 
-    if (!map.containsKey("target")) {
-      System.err.println("[flow-agent] Missing required 'target' argument.");
-    }
-
     return map;
   }
 
   private static ElementMatcher<TypeDescription> typeMatcher(String targetValue) {
-    if (targetValue.isEmpty()) {
-      System.err.println("[flow-agent] 'target' is empty; nothing to instrument.");
-      return null;
-    }
-
     // split on '+' and build an OR matcher:
     // nameStartsWith(t1).or(nameStartsWith(t2))...
     String[] tokens = targetValue.split("\\+");
@@ -243,6 +267,12 @@ public class AgentMain {
   }
 
   private static void printUsage(PrintStream out) {
-    out.println("[flow-agent] Provide agent arguments like: target=com.myapp.,out=/tmp/flow");
+    out.println(
+        "[flow-agent] Usage: target=<prefix[+prefix...]>,out=<dir>[,format=binary|jsonl][,optimize=<dir>][,ids=<file>]");
+    out.println("  target   : '+'-separated list of class name prefixes to instrument (required)");
+    out.println("  out      : output directory for flow files and method ID mapping (required)");
+    out.println("  format   : call tree format: 'binary' (default) or 'jsonl'");
+    out.println("  optimize : path to existing flow directory to optimize method IDs (optional)");
+    out.println("  ids      : path to existing method ID mapping file to reuse IDs (optional)");
   }
 }
