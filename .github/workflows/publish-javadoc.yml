@@ -1,17 +1,20 @@
 name: Publish Javadoc
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: [ "Gradle Build" ]
+    branches: [ "main" ]
+    types:
+      - completed
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
     permissions:
-      contents: write  # if you have a protection rule on your repository, you'll need to give write permission to the workflow.
+      contents: write
     steps:
-      - name: Deploy JavaDoc
+      - name: Publish JavaDoc
         uses: MathieuSoysal/Javadoc-publisher.yml@v3.0.2
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
