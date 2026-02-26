@@ -8,18 +8,14 @@ import java.io.EOFException;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * Utilities to read existing method ID mapping, count method invocations from {@link Recorder}
@@ -29,25 +25,24 @@ public final class MethodIdRemapper {
 
   private MethodIdRemapper() {}
 
-  /** Read mapping from a file. */
-  private static Map<String, Long> readMapping(Path mappingFile) throws IOException {
-    Map<String, Long> map = new LinkedHashMap<>();
+  /** Read mapping from a file, using the method ID as the key and the signature as the value. */
+  private static Map<Long, String> readMapping(Path mappingFile) throws IOException {
+    Map<Long, String> map = new HashMap<>();
     if (!Files.exists(mappingFile)) {
       return map;
     }
 
-    try (BufferedReader r = Files.newBufferedReader(mappingFile, StandardCharsets.UTF_8)) {
+    try (BufferedReader r = Files.newBufferedReader(mappingFile)) {
       String line;
       while ((line = r.readLine()) != null) {
-        line = line.trim();
         if (line.isEmpty() || line.startsWith("#")) continue;
         int eq = line.indexOf('=');
         if (eq <= 0) continue;
-        String key = line.substring(0, eq).trim();
-        String val = line.substring(eq + 1).trim();
-        if (key.isEmpty() || val.isEmpty()) continue;
-        long id = Long.parseLong(val);
-        map.put(key, id);
+        String signature = line.substring(0, eq);
+        String idString = line.substring(eq + 1);
+        if (signature.isEmpty() || idString.isEmpty()) continue;
+        long id = Long.parseLong(idString);
+        map.put(id, signature);
       }
     }
     return map;
@@ -56,61 +51,43 @@ public final class MethodIdRemapper {
   // ---------- Trace parsing of BinaryThreadRecorder encoding ----------
 
   /**
-   * Count enter events in all files under inputDir (non-recursive). The previousMapping is used to
-   * translate methodId -> methodKey.
+   * Count enter events in all files under inputDir (non-recursive).
    *
-   * <p>Returns a map methodKey -> count (0 if never seen), and prints diagnostics via returned
-   * result (counts + number of unknown ids).
+   * @return Map of methodId -> count (0 if never seen).
    */
-  private static Map<String, Long> countCalls(Path inputDir, Map<String, Long> previousMapping)
+  private static Map<Long, Long> countCalls(Path inputDir, Map<Long, String> previousMapping)
       throws IOException {
-    Map<Long, String> idToKey = invertMapping(previousMapping);
-    Map<String, Long> counts = new HashMap<>();
+    Map<Long, Long> counts = new HashMap<>();
 
     // initialize all known methods with zero
-    for (String key : previousMapping.keySet()) {
-      counts.put(key, 0L);
+    for (Long id : previousMapping.keySet()) {
+      counts.put(id, 0L);
     }
 
-    long unknownIdEvents = 0L;
-
+    // iterate over each thread's call tree
     try (DirectoryStream<Path> ds = Files.newDirectoryStream(inputDir, "*.flow")) {
       for (Path flowFile : ds) {
         if (!Files.isRegularFile(flowFile)) continue;
 
         try (InputStream in = new BufferedInputStream(Files.newInputStream(flowFile))) {
-          long unknown = countCallsFromSingleTrace(in, idToKey, counts);
-          unknownIdEvents += unknown;
+          countCallsInThread(in, previousMapping, counts);
         } catch (EOFException eof) {
-          // ignore truncated file
+          System.err.println(eof);
         }
       }
-    }
-
-    if (unknownIdEvents > 0) {
-      System.err.println(
-          "[flow-agent] Found "
-              + unknownIdEvents
-              + " unknown IDs while processing flow files in "
-              + inputDir);
     }
 
     return counts;
   }
 
-  /**
-   * Parse a single trace InputStream and increment counts map for enter events.
-   *
-   * <p>Returns the number of enter events whose methodId was NOT present in idToKey.
-   */
-  private static long countCallsFromSingleTrace(
-      InputStream in, Map<Long, String> idToKey, Map<String, Long> counts) throws IOException {
-    long unknowns = 0L;
+  /** Parse a single trace file and increment {@code counts} map for enter events. */
+  private static void countCallsInThread(
+      InputStream in, Map<Long, String> idToSignature, Map<Long, Long> counts) throws IOException {
     int b;
     while ((b = in.read()) != -1) {
-      boolean flagEnter = (b & F_ENTER) != 0;
+      boolean isEnter = (b & F_ENTER) != 0;
       boolean continuation = (b & M_PACK_CONT) != 0;
-      long value = b & M_PACK_PAYLOAD;
+      long methodId = b & M_PACK_PAYLOAD;
 
       if (continuation) {
         // read LEB-like continuation bytes, starting at bit 6
@@ -120,72 +97,47 @@ public final class MethodIdRemapper {
           if (next == -1) {
             throw new EOFException("Unexpected EOF while reading varint continuation");
           }
-          value |= ((long) (next & M_PAYLOAD)) << shift;
-          if ((next & F_ENTER) == 0) {
+          methodId |= ((long) (next & M_PAYLOAD)) << shift;
+          if ((next & M_CONT) == 0) {
             break;
           }
           shift += 7;
         }
       }
 
-      if (flagEnter) {
-        long methodId = value;
-        String key = idToKey.get(methodId);
-        if (key != null) {
-          counts.merge(key, 1L, Long::sum);
-        } else {
-          unknowns++;
-        }
-      } else {
-        // exit events do not carry method id; value encodes extra exits (pendingExits-1)
-        // we do not need to do anything for exit events for counting enters
+      if (isEnter) { // only enter events are relevant for counting calls
+        counts.merge(methodId, 1L, Long::sum);
       }
     }
-    return unknowns;
-  }
-
-  private static Map<Long, String> invertMapping(Map<String, Long> mapping) {
-    Map<Long, String> inv = new HashMap<>();
-    for (Map.Entry<String, Long> e : mapping.entrySet()) {
-      inv.put(e.getValue(), e.getKey());
-    }
-    return inv;
   }
 
   // ---------- Optimization: sort by frequency ----------
 
   /**
-   * Create a new mapping by sorting methods by descending count. Tie-breaker: method key
-   * lexicographically.
+   * Create a new mapping by sorting methods by descending count.
    *
-   * @return Ordered map of methodKey -> newId
+   * @return Map of methodKey -> newId
    */
   private static Map<String, Long> optimizeMappingByCounts(
-      Map<String, Long> previousMapping, Map<String, Long> counts) {
-    // union of all keys: include methods present in counts or previous mapping
-    Set<String> allKeys = new LinkedHashSet<>();
-    allKeys.addAll(previousMapping.keySet());
-    allKeys.addAll(counts.keySet());
-
-    record Entry(String key, long count) {}
-
-    List<Entry> list = new ArrayList<>(allKeys.size());
-    for (String key : allKeys) {
-      long count = counts.getOrDefault(key, 0L);
-      list.add(new Entry(key, count));
+      Map<Long, String> mapping, Map<Long, Long> counts) {
+    // store all IDs in a list for sorting
+    // they are supposed to be dense (continuous from 0 to N-1) so we could use the mapping size
+    // however, the current implementation is defensive and allows for sparse mappings
+    List<Long> ids = new ArrayList<>(mapping.size());
+    for (Long id : mapping.keySet()) {
+      ids.add(id);
     }
 
-    list.sort(
-        Comparator.comparingLong((Entry e) -> -e.count) // desc count
-            .thenComparing(e -> e.key) // deterministic lexicographic
-        );
+    // sort by descending count
+    ids.sort(Comparator.comparingLong(id -> -counts.getOrDefault(id, 0L)));
 
-    Map<String, Long> out = new LinkedHashMap<>();
+    // assign new IDs starting from most frequently called methods
+    Map<String, Long> optimized = new HashMap<>();
     long nextId = 0L;
-    for (Entry e : list) {
-      out.put(e.key, nextId++);
+    for (Long id : ids) {
+      optimized.put(mapping.get(id), nextId++);
     }
-    return out;
+    return optimized;
   }
 
   /**
@@ -202,8 +154,8 @@ public final class MethodIdRemapper {
       throw new FileNotFoundException("ids.properties not found in " + inputDir);
     }
 
-    Map<String, Long> previous = readMapping(idsFile);
-    Map<String, Long> counts = countCalls(inputDir, previous);
+    Map<Long, String> previous = readMapping(idsFile);
+    Map<Long, Long> counts = countCalls(inputDir, previous);
     Map<String, Long> optimized = optimizeMappingByCounts(previous, counts);
 
     Path outPath = outputDir.resolve("ids.properties");
