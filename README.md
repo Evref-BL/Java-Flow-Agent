@@ -1,3 +1,6 @@
+[![Build](https://github.com/Evref-BL/Java-Flow-Agent/actions/workflows/gradle.yml/badge.svg)](https://github.com/Evref-BL/Java-Flow-Agent/actions/workflows/gradle.yml)
+[![Javadoc](https://img.shields.io/badge/JavaDoc-Online-green)](https://Evref-BL.github.io/Java-Flow-Agent/)
+
 # Flow Agent
 
 A Java agent that records a dynamic call tree of the chosen methods.
