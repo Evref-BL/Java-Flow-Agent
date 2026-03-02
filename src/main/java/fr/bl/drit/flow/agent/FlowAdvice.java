@@ -4,8 +4,8 @@ import java.io.IOException;
 import net.bytebuddy.asm.Advice;
 
 /**
- * Contains the enter and exit {@link net.bytebuddy.asm.Advice Advice} methods. Their code is
- * inserted at the start and end of instrumented methods, respectively.
+ * Contains the enter and exit {@link Advice} methods. Their code is inserted at the start and end
+ * of instrumented methods, respectively.
  */
 public final class FlowAdvice {
 

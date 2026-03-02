@@ -5,6 +5,7 @@ import java.io.IOException;
 
 /** Specifies a recorder that is used to record flow data. */
 public interface Recorder extends Closeable {
+
   /**
    * Emit a method enter event with the given method ID.
    *

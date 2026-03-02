@@ -2,20 +2,20 @@ package fr.bl.drit.flow.agent;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.Queue;
+import java.util.Collection;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /** A recorder that orchestrates per-thread recorders. */
 public final class ThreadLocalRecorder implements Recorder {
 
   private final ThreadLocal<ThreadRecorder> local;
-  private final Queue<ThreadRecorder> all = new ConcurrentLinkedQueue<>();
+  private final Collection<ThreadRecorder> all = new ConcurrentLinkedQueue<>();
 
   /**
    * @param factory Responsible for creating {@link ThreadRecorder}s
    * @param outputDir Path to the output directory
    */
-  public ThreadLocalRecorder(ThreadRecorderFactory factory, Path outputDir) {
+  public ThreadLocalRecorder(final ThreadRecorderFactory factory, final Path outputDir) {
     this.local =
         ThreadLocal.withInitial(
             () -> {

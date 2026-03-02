@@ -245,7 +245,7 @@ public class BinaryThreadRecorder implements ThreadRecorder {
    * @param value The positive integer to encode
    * @throws IOException If an I/O error occurs when writing to file.
    */
-  protected void writeFlagAndVarInt(int flag, long value) throws IOException {
+  protected void writeFlagAndVarInt(byte flag, long value) throws IOException {
     // Extract lowest 6 bits for first byte
     int firstPayload = (int) (value & M_PACK_PAYLOAD); // 6 bits
     value >>>= 6;

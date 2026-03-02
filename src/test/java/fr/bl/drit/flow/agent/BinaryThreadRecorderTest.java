@@ -99,16 +99,13 @@ public class BinaryThreadRecorderTest {
   }
 
   @Test
-  public void testWriteVarInt_smallValues() throws Exception {
+  public void testWriteVarInt_noContinuation() throws Exception {
     String outputPath = null;
     try (BinaryThreadRecorder rec = new BinaryThreadRecorder(tempDir)) {
       outputPath = rec.getFileName();
       rec.writeVarInt(0L);
       rec.writeVarInt(1L);
       rec.writeVarInt(127L);
-      rec.writeVarInt(128L);
-      rec.writeVarInt(300L);
-      rec.writeVarInt(Long.MAX_VALUE);
     }
 
     byte[] actual = Files.readAllBytes(tempDir.resolve(outputPath));
@@ -116,11 +113,28 @@ public class BinaryThreadRecorderTest {
     byte[] e0 = leb128Expected(0L); // 00
     byte[] e1 = leb128Expected(1L); // 01
     byte[] e127 = leb128Expected(127L); // 7F
+
+    byte[] expected = concat(e0, e1, e127);
+    assertBytesEquals(expected, actual);
+  }
+
+  @Test
+  public void testWriteVarInt_withContinuation() throws Exception {
+    String outputPath = null;
+    try (BinaryThreadRecorder rec = new BinaryThreadRecorder(tempDir)) {
+      outputPath = rec.getFileName();
+      rec.writeVarInt(128L);
+      rec.writeVarInt(300L);
+      rec.writeVarInt(Long.MAX_VALUE);
+    }
+
+    byte[] actual = Files.readAllBytes(tempDir.resolve(outputPath));
+
     byte[] e128 = leb128Expected(128L); // 80 01
     byte[] e300 = leb128Expected(300L); // AC 02
     byte[] eMax = leb128Expected(Long.MAX_VALUE);
 
-    byte[] expected = concat(e0, e1, e127, e128, e300, eMax);
+    byte[] expected = concat(e128, e300, eMax);
     assertBytesEquals(expected, actual);
   }
 
