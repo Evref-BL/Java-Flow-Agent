@@ -40,11 +40,9 @@ import net.bytebuddy.matcher.ElementMatcher;
  *   <li>ids (optional) -> path to existing method ID mapping file
  * </ul>
  *
- * <pre>
- * <code class="language-properties">
+ * <pre><code class="language-properties">
  * Minimal example: target=com.myapp.,out=/tmp/flow/
- * </code>
- * </pre>
+ * </code></pre>
  *
  * Use the {@code optimize} argument to optimize method IDs by leveraging an existing mapping of
  * method IDs and flow files. Method IDs are natural numbers. Those that are called more frequently
@@ -54,12 +52,10 @@ import net.bytebuddy.matcher.ElementMatcher;
  * using the {@code ids} argument. Refer to the {@link MethodIdRemapper} class comment for more
  * details about the optimization process.
  *
- * <pre>
- * <code class="language-properties">
+ * <pre><code class="language-properties">
  * Example with optimization: target=com.myapp.,optimize=/tmp/flow/,out=/tmp/optimized-flow/
  * Then reuse optimized mapping: target=com.myapp.,ids=/tmp/optimized-flow/ids.properties,out=/tmp/optimized-flow-2/
- * </code>
- * </pre>
+ * </code></pre>
  */
 public class AgentMain {
 
@@ -182,7 +178,7 @@ public class AgentMain {
                     }
 
                     System.out.println("[flow-agent] Flow written to " + outputDir);
-                  } catch (Exception e) {
+                  } catch (IOException e) {
                     System.err.println("[flow-agent] Failed to write flow: " + e);
                     e.printStackTrace();
                   }

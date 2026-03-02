@@ -4,7 +4,6 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -39,8 +38,7 @@ public final class JsonlThreadRecorder implements ThreadRecorder {
                     outputDir.resolve(this.fileName),
                     StandardOpenOption.CREATE,
                     StandardOpenOption.WRITE,
-                    StandardOpenOption.TRUNCATE_EXISTING),
-                StandardCharsets.UTF_8),
+                    StandardOpenOption.TRUNCATE_EXISTING)),
             64 * 1024);
   }
 
