@@ -114,9 +114,6 @@ import java.nio.file.StandardOpenOption;
  *   <li>If ENTER: emit method entry with decoded {@code methodId}.
  *   <li>If EXIT: emit {@code value + 1} exits.
  * </ol>
- *
- * @see #writeVarInt(long)
- * @see #writeFlagAndVarInt(int, long)
  */
 public class BinaryThreadRecorder implements ThreadRecorder {
 
