@@ -95,11 +95,9 @@ loadScripts(document, 'script');</script>
    <li>ids (optional) -> path to existing method ID mapping file
  </ul>
 
- <pre>
- <code class="language-properties">
+ <pre><code class="language-properties">
  Minimal example: target=com.myapp.,out=/tmp/flow/
- </code>
- </pre>
+ </code></pre>
 
  Use the <code>optimize</code> argument to optimize method IDs by leveraging an existing mapping of
  method IDs and flow files. Method IDs are natural numbers. Those that are called more frequently
@@ -109,12 +107,10 @@ loadScripts(document, 'script');</script>
  using the <code>ids</code> argument. Refer to the <a href="MethodIdRemapper.html" title="class in fr.bl.drit.flow.agent"><code>MethodIdRemapper</code></a> class comment for more
  details about the optimization process.
 
- <pre>
- <code class="language-properties">
+ <pre><code class="language-properties">
  Example with optimization: target=com.myapp.,optimize=/tmp/flow/,out=/tmp/optimized-flow/
  Then reuse optimized mapping: target=com.myapp.,ids=/tmp/optimized-flow/ids.properties,out=/tmp/optimized-flow-2/
- </code>
- </pre></div>
+ </code></pre></div>
 </section>
 <section class="summary">
 <ul class="summary-list">

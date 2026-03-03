@@ -187,15 +187,6 @@ implements <a href="ThreadRecorder.html" title="interface in fr.bl.drit.flow.age
    <li>If ENTER: emit method entry with decoded <code>methodId</code>.
    <li>If EXIT: emit <code>value + 1</code> exits.
  </ol></div>
-<dl class="notes">
-<dt>See Also:</dt>
-<dd>
-<ul class="see-list-long">
-<li><a href="#writeVarInt(long)"><code>writeVarInt(long)</code></a></li>
-<li><a href="#writeFlagAndVarInt(int,long)"><code>writeFlagAndVarInt(int, long)</code></a></li>
-</ul>
-</dd>
-</dl>
 </section>
 <section class="summary">
 <ul class="summary-list">
@@ -312,7 +303,7 @@ implements <a href="ThreadRecorder.html" title="interface in fr.bl.drit.flow.age
 <div class="col-second even-row-color method-summary-table method-summary-table-tab2 method-summary-table-tab4"><code><a href="#getFileName()" class="member-name-link">getFileName</a>()</code></div>
 <div class="col-last even-row-color method-summary-table method-summary-table-tab2 method-summary-table-tab4">&nbsp;</div>
 <div class="col-first odd-row-color method-summary-table method-summary-table-tab2 method-summary-table-tab4"><code>protected void</code></div>
-<div class="col-second odd-row-color method-summary-table method-summary-table-tab2 method-summary-table-tab4"><code><a href="#writeFlagAndVarInt(int,long)" class="member-name-link">writeFlagAndVarInt</a><wbr>(int&nbsp;flag,
+<div class="col-second odd-row-color method-summary-table method-summary-table-tab2 method-summary-table-tab4"><code><a href="#writeFlagAndVarInt(byte,long)" class="member-name-link">writeFlagAndVarInt</a><wbr>(byte&nbsp;flag,
  long&nbsp;value)</code></div>
 <div class="col-last odd-row-color method-summary-table method-summary-table-tab2 method-summary-table-tab4">
 <div class="block">Write unsigned variable-length integer with a 1-bit flag packed into the first byte.</div>
@@ -583,9 +574,9 @@ implements <a href="ThreadRecorder.html" title="interface in fr.bl.drit.flow.age
 </section>
 </li>
 <li>
-<section class="detail" id="writeFlagAndVarInt(int,long)">
+<section class="detail" id="writeFlagAndVarInt(byte,long)">
 <h3>writeFlagAndVarInt</h3>
-<div class="member-signature"><span class="modifiers">protected</span>&nbsp;<span class="return-type">void</span>&nbsp;<span class="element-name">writeFlagAndVarInt</span><wbr><span class="parameters">(int&nbsp;flag,
+<div class="member-signature"><span class="modifiers">protected</span>&nbsp;<span class="return-type">void</span>&nbsp;<span class="element-name">writeFlagAndVarInt</span><wbr><span class="parameters">(byte&nbsp;flag,
  long&nbsp;value)</span>
                            throws <span class="exceptions"><a href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/io/IOException.html" title="class or interface in java.io" class="external-link">IOException</a></span></div>
 <div class="block">Write unsigned variable-length integer with a 1-bit flag packed into the first byte.
