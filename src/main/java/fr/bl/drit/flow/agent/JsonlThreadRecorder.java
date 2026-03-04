@@ -52,7 +52,7 @@ public final class JsonlThreadRecorder implements ThreadRecorder {
   @Override
   public void enter(long methodId) throws IOException {
     StringBuilder sb = new StringBuilder(128);
-    sb.append("{\"e\":\"enter\",\"method\":\"").append(methodId).append("\"}\n");
+    sb.append("{\"e\":\"enter\",\"method\":").append(methodId).append("}\n");
     out.write(sb.toString());
   }
 
