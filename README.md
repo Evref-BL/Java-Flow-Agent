@@ -33,7 +33,7 @@ The jar is generated in `build/libs/`.
 Attach the agent using the `-javaagent` option and provide arguments as comma-separated `key=value` pairs:
 
 ```sh
-java -javaagent:path/to/flow-agent.jar=target=<prefix[+prefix...]>,out=<dir>[,format=binary|jsonl][,optimize=<dir>][,ids=<file>] \
+java -javaagent:path/to/flow-agent.jar=target=<prefix[+prefix...]>,out=<dir>[,format=binary|jsonl][,optimize=<dir>][,ids=<file>][,debug=true] \
      -jar your-application.jar
 ```
 
@@ -59,6 +59,9 @@ java -javaagent:path/to/flow-agent.jar=target=<prefix[+prefix...]>,out=<dir>[,fo
 
 * **`ids`** (optional)
   Path to an existing ID mapping file to reuse.
+
+* **`debug`** (optional)
+  it enables debug mode, which adds debugging information to the agent logs.
 
 ### Examples
 
