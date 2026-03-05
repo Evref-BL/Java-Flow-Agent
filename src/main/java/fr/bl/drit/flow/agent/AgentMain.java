@@ -91,7 +91,7 @@ public class AgentMain {
     final String outputPath = args.get("out");
     final String format = args.getOrDefault("format", "binary");
     final String optimizePath = args.get("optimize");
-    final Boolean debug = args.getOrDefault("debug", "false").equalsIgnoreCase("true");
+    final boolean debug = args.getOrDefault("debug", "false").equalsIgnoreCase("true");
     String mappingPath = args.get("ids"); // can be overwritten if optimize is used
 
     if (target.isEmpty()) {
@@ -210,13 +210,10 @@ public class AgentMain {
                 (builder, typeDescription, classLoader, module, protectionDomain) ->
                     builder.visit(advice.on(methodMatcher)));
 
-    // === debug section ===
-
     // add a listener to print instrumentation events if debug is enabled
     if (debug) {
       agentBuilder = agentBuilder.with(AgentBuilder.Listener.StreamWriting.toSystemOut());
     }
-
     
     agentBuilder.installOn(inst);
   }
